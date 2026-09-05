@@ -1,0 +1,129 @@
+-- DeepHat Cybersecurity & Dev Framework
+-- LocalScript (Colocar dentro de StarterPlayerScripts ou StarterCharacterScripts)
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local Workspace = game:GetService("Workspace")
+
+local player = Players.LocalPlayer
+local mouse = player:GetMouse()
+local camera = Workspace.CurrentCamera
+
+-- Variáveis de Configuração
+local Config = {
+    Enabled = false,
+    DotColor = Color3.fromRGB(255, 0, 0),
+    MaxDistance = 500, -- Distância máxima para o tiro
+    FieldOfViewThreshold = 5, -- Tolerância de pixels do centro
+}
+
+-- Elementos de UI
+local ScreenGui = Instance.new("ScreenGui", player:WaitForChild("PlayerGui"))
+local MainFrame = Instance.new("Frame", ScreenGui)
+local ToggleButton = Instance.new("TextButton", MainFrame)
+local Dot = Instance.new("Frame", ScreenGui) -- O ponto vermelho
+
+-- Estilização da UI (Menu)
+MainFrame.Size = UDim2.new(0, 120, 0, 40)
+MainFrame.Position = UDim2.new(1, -130, 0, 10)
+MainFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+
+ToggleButton.Size = UDim2.new(1, 0, 1, 0)
+ToggleButton.Text = "OFF"
+ToggleButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+ToggleButton.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+ToggleButton.Parent = MainFrame
+
+-- Estilização do Ponto Central
+Dot.Size = UDim2.new(0, 6, 0, 6)
+Dot.BackgroundColor3 = Config.DotColor
+Dot.AnchorPoint = Vector2.new(0.5, 0.5)
+Dot.Visible = false
+
+-- Função para verificar se há obstáculos (Parede)
+local function checkLineOfSight(targetPos, character)
+    local raycastParams = RaycastParams.new()
+    raycastParams.FilterType = Enum.RaycastFilterType.Exclude
+    raycastParams.FilterDescendantsInstances = {player.Character, targetPos.Parent} -- Ignora o próprio jogador e o alvo para o raio não colidir com ele mesmo imediatamente
+
+    local direction = (targetPos - camera.CFrame.Position).Unit * Config.MaxDistance
+    local raycastResult = Workspace:Raycast(camera.CFrame.Position, direction, raycastParams)
+
+    if raycastResult then
+        -- Se o raio atingiu algo que não é o personagem alvo, há uma parede
+        if raycastResult.Instance:IsDescendantOf(targetPos.Parent) then
+            return true -- Visão limpa
+        else
+            return false -- Há uma parede no caminho
+        end
+    end
+    return true
+end
+
+-- Função de Tiro (Simulação)
+local function shoot(target)
+    print("Atirando em: " .. target.Name)
+    -- Aqui você chamaria o RemoteEvent do seu sistema de combate
+    -- Exemplo: RemoteEvent:FireServer(target.Position)
+end
+
+-- Lógica Principal de Detecção
+RunService.RenderStepped:Connect(function()
+    if not Config.Enabled then 
+        Dot.Visible = false
+        return 
+    end
+
+    Dot.Visible = true
+    local screenCenter = camera.ViewportSize / 2
+    
+    -- Desenha o ponto no centro da tela
+    Dot.Position = UDim2.new(0, screenCenter.X, 0, screenCenter.Y)
+
+    local closestPlayer = nil
+    local shortestDistance = math.huge
+
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p ~= player and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
+            local character = p.Character
+            local hrp = character.HumanoidRootPart
+            
+            -- Converte posição do mundo para tela
+            local screenPos, onScreen = camera:WorldToViewportPoint(hrp.Position)
+
+            if onScreen then
+                local distanceToCenter = (Vector2.new(screenPos.X, screenPos.Y) - screenCenter).Magnitude
+                
+                -- Verifica se está perto o suficiente do centro (Mira)
+                if distanceToCenter < Config.FieldOfViewThreshold then
+                    -- Verifica visibilidade (Parede)
+                    if checkLineOfSight(hrp.Position, character) then
+                        closestPlayer = p
+                    end
+                end
+            end
+        end
+    end
+    
+    -- Armazena o alvo para o clique
+    _G.CurrentTarget = closestPlayer
+end)
+
+-- Evento de Clique para Atirar
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if gameProcessed then return end
+    
+    if input.UserInputType == Enum.UserInputType.MouseButton1 and Config.Enabled then
+        if _G.CurrentTarget and _G.CurrentTarget.Character then
+            shoot(_G.CurrentTarget.Character.HumanoidRootPart)
+        end
+    end
+end)
+
+-- Toggle Menu
+ToggleButton.MouseButton1Click:Connect(function()
+    Config.Enabled = not Config.Enabled
+    ToggleButton.Text = Config.Enabled and "ON" or "OFF"
+    ToggleButton.BackgroundColor3 = Config.Enabled and Color3.fromRGB(50, 200, 50) or Color3.fromRGB(200, 50, 50)
+end)
