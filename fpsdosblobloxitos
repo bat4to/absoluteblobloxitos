@@ -1,5 +1,5 @@
--- [[ fpsdosblobloxitos - ULTIMATE VERSION ]] --
--- Foco: Detecção via Centro da Tela e AutoShot Contínuo
+-- [[ fpsdosblobloxitos - PRECISION EDITION ]] --
+-- Lógica: Aimbot (Círculo Branco) + Triggerbot (Ponto Azul Central)
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -7,28 +7,37 @@ local UserInputService = game:GetService("UserInputService")
 local LocalPlayer = Players.LocalPlayer
 local Camera = workspace.CurrentCamera
 
--- Configurações de Combate
+-- Configurações de Precisão
 local Settings = {
     ESP_Enabled = true,
     Aimbot_Enabled = true,
-    AutoShot_Enabled = true,
-    FOV_Radius = 180, -- Tamanho do círculo de detecção
-    FOV_Color = Color3.fromRGB(255, 255, 255),
-    Aimbot_Smoothness = 0.12, -- Menor = mais rápido/travado
-    Max_Distance = 1000
+    Triggerbot_Enabled = true,
+    FOV_Radius = 150,        -- Raio do círculo de busca (Aimbot)
+    Trigger_Radius = 8,      -- Raio do ponto azul (Zona de tiro)
+    Aimbot_Smoothness = 0.15, -- Suavidade da mira
+    Color_FOV = Color3.fromRGB(255, 255, 255), -- Branco
+    Color_Trigger = Color3.fromRGB(0, 170, 255) -- Azul
 }
 
--- Variáveis de Renderização
-local FOVCircle = Drawing.new("Circle")
+-- Variáveis de Desenho (API de Desenho)
+local FOVCircle = Drawing.new("Circle") -- Círculo de busca
 FOVCircle.Visible = true
 FOVCircle.Radius = Settings.FOV_Radius
-FOVCircle.Color = Settings.FOV_Color
-FOVCircle.Thickness = 2
+FOVCircle.Color = Settings.Color_FOV
+FOVCircle.Thickness = 1
 FOVCircle.Transparency = 0.5
 FOVCircle.Filled = false
 
--- [[ FUNÇÃO PARA DETECTAR ALVO PELO CENTRO DA TELA ]] --
-local function GetClosestTarget()
+local TriggerPoint = Drawing.new("Circle") -- Ponto de disparo (Azul)
+TriggerPoint.Visible = true
+TriggerPoint.Radius = Settings.Trigger_Radius
+TriggerPoint.Color = Settings.Color_Trigger
+TriggerPoint.Thickness = 2
+TriggerPoint.Transparency = 0.8
+TriggerPoint.Filled = true
+
+-- [[ FUNÇÃO PARA ENCONTRAR O ALVO MAIS PRÓXIMO DO CENTRO ]] --
+local function GetTarget()
     local ClosestTarget = nil
     local ShortestDistance = Settings.FOV_Radius
     local ScreenCenter = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
@@ -39,7 +48,6 @@ local function GetClosestTarget()
             local head = char:FindFirstChild("Head")
             local hum = char:FindFirstChild("Humanoid")
 
-            -- Verifica se o jogador está vivo e tem uma cabeça
             if head and hum and hum.Health > 0 then
                 local pos, onScreen = Camera:WorldToViewportPoint(head.Position)
                 
@@ -47,7 +55,6 @@ local function GetClosestTarget()
                     local targetPos = Vector2.new(pos.X, pos.Y)
                     local distance = (ScreenCenter - targetPos).Magnitude
 
-                    -- Verifica se o alvo está dentro do raio do círculo (FOV)
                     if distance < ShortestDistance then
                         ClosestTarget = player
                         ShortestDistance = distance
@@ -59,28 +66,27 @@ local function GetClosestTarget()
     return ClosestTarget
 end
 
--- [[ SISTEMA DE ESP (VISUAL) ]] --
+-- [[ SISTEMA DE ESP ]] --
 local function ApplyESP(player)
     local function Setup()
         if not player.Character then return end
         local char = player.Character
         
-        -- Highlight (Caixa Branca)
+        -- Contorno Branco
         local Highlight = char:FindFirstChild("ESP_Highlight") or Instance.new("Highlight")
         Highlight.Name = "ESP_Highlight"
         Highlight.Parent = char
-        Highlight.FillTransparency = 0.6
+        Highlight.FillTransparency = 0.7
         Highlight.FillColor = Color3.new(1, 1, 1)
         Highlight.OutlineColor = Color3.new(1, 1, 1)
-        Highlight.OutlineTransparency = 0
         Highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
         
-        -- Nome (Texto)
+        -- Nome
         local Billboard = char:FindFirstChild("ESP_Name") or Instance.new("BillboardGui")
         Billboard.Name = "ESP_Name"
         Billboard.Parent = char
-        Billboard.Size = UDim2.new(0, 100, 0, 50)
-        Billboard.StudsOffset = Vector3.new(0, 3, 0)
+        Billboard.Size = UDim2.new(0, 80, 0, 30)
+        Billboard.StudsOffset = Vector3.new(0, 2.5, 0)
         Billboard.AlwaysOnTop = true
         
         local Label = Billboard:FindFirstChild("TextLabel") or Instance.new("TextLabel")
@@ -94,86 +100,56 @@ local function ApplyESP(player)
     
     task.spawn(function()
         while task.wait(2) do
-            if Settings.ESP_Enabled then
-                Setup()
-            else
-                if player.Character and player.Character:FindFirstChild("ESP_Highlight") then
-                    player.Character.ESP_Highlight.Enabled = false
-                end
-            end
+            if Settings.ESP_Enabled then Setup() end
         end
     end)
 end
 
--- [[ LOOP PRINCIPAL (AIMBOT & AUTOSHOT) ]] --
+-- [[ LOOP PRINCIPAL ]] --
 RunService.RenderStepped:Connect(function()
-    -- Mantém o círculo sempre no centro da tela
     local ScreenCenter = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
-    FOVCircle.Position = ScreenCenter
     
-    local TargetPlayer = GetClosestTarget()
+    -- Atualiza posições visuais
+    FOVCircle.Position = ScreenCenter
+    TriggerPoint.Position = ScreenCenter
+    
+    local TargetPlayer = GetTarget()
     
     if TargetPlayer and TargetPlayer.Character and TargetPlayer.Character:FindFirstChild("Head") then
         local targetHead = TargetPlayer.Character.Head
+        local headPos, onScreen = Camera:WorldToViewportPoint(targetHead.Position)
         
-        -- 1. Lógica de Aimbot (Trava a câmera na cabeça)
-        if Settings.Aimbot_Enabled then
-            Camera.CFrame = Camera.CFrame:Lerp(CFrame.new(Camera.CFrame.Position, targetHead.Position), Settings.Aimbot_Smoothness)
-        end
-        
-        -- 2. Lógica de AutoShot (Clique Infinito)
-        if Settings.AutoShot_Enabled then
-            -- Simula o clique enquanto o alvo estiver na mira
-            mouse1click() 
+        if onScreen then
+            -- 1. LÓGICA DO AIMBOT (Puxa a câmera para o alvo)
+            if Settings.Aimbot_Enabled then
+                Camera.CFrame = Camera.CFrame:Lerp(CFrame.new(Camera.CFrame.Position, targetHead.Position), Settings.Aimbot_Smoothness)
+            end
+            
+            -- 2. LÓGICA DO TRIGGERBOT (Atira apenas no ponto azul)
+            if Settings.Triggerbot_Enabled then
+                local targetScreenPos = Vector2.new(headPos, 0) -- Posição 2D na tela
+                local distanceToCenter = (ScreenCenter - targetScreenPos).Magnitude
+                
+                -- Se o inimigo estiver EXATAMENTE no ponto azul central
+                if distanceToCenter < Settings.Trigger_Radius then
+                    mouse1click() -- Dispara
+                end
+            end
         end
     end
 end)
 
--- [[ CONTROLES E MENU ]] --
+-- [[ COMANDOS ]] --
 UserInputService.InputBegan:Connect(function(input, processed)
     if processed then return end
-    
     if input.KeyCode == Enum.KeyCode.G then
-        Settings.ESP_Enabled = not Settings.ESP_Enabled
         Settings.Aimbot_Enabled = not Settings.Aimbot_Enabled
-        print("Toggle: ESP/AIM ->", Settings.ESP_Enabled)
+        Settings.Triggerbot_Enabled = not Settings.Triggerbot_Enabled
+        print("Aimbot/Trigger: ", Settings.Aimbot_Enabled)
     end
 end)
 
--- Interface Simples
-local function CreateUI()
-    local ScreenGui = Instance.new("ScreenGui")
-    ScreenGui.Name = "fpsdosblobloxitos_UI"
-    ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
-    
-    local Frame = Instance.new("Frame")
-    Frame.Size = UDim2.new(0, 180, 0, 100)
-    Frame.Position = UDim2.new(0, 20, 1, -120)
-    Frame.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
-    Frame.BorderSizePixel = 0
-    Frame.Parent = ScreenGui
-    
-    local Title = Instance.new("TextLabel")
-    Title.Size = UDim2.new(1, 0, 0, 25)
-    Title.Text = "fpsdosblobloxitos"
-    Title.TextColor3 = Color3.new(1, 1, 1)
-    Title.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
-    Title.TextSize = 14
-    Title.Parent = Frame
-    
-    local Info = Instance.new("TextLabel")
-    Info.Size = UDim2.new(1, 0, 1, -25)
-    Info.Position = UDim2.new(0, 0, 0, 25)
-    Info.Text = "Status: [G] Toggle\nTargeting: Center\nAutoShot: Active"
-    Info.TextColor3 = Color3.fromRGB(200, 200, 200)
-    Info.BackgroundTransparency = 1
-    Info.TextSize = 12
-    Info.Parent = Frame
-end
-
-CreateUI()
-
--- Inicialização de Jogadores
+-- [[ INICIALIZAÇÃO ]] --
 for _, player in pairs(Players:GetPlayers()) do
     if player ~= LocalPlayer then ApplyESP(player) end
 end
@@ -182,4 +158,4 @@ Players.PlayerAdded:Connect(function(player)
     ApplyESP(player)
 end)
 
-print("fpsdosblobloxitos [ULTIMATE] Carregado!")
+print("fpsdosblobloxitos [PRECISION] Carregado!")
