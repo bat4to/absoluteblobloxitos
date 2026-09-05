@@ -1,5 +1,5 @@
--- DeepHat Ultimate Combat Framework v3 (Advanced Edition)
--- Módulos: Aimbot Pro, KillAura, Teleport, Movement, Stealth
+-- Blobloxitos Aura - Advanced Framework
+-- Módulos: Fly, Teleport, Bring, Movement, Combat
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -13,43 +13,46 @@ local Mouse = LocalPlayer:GetMouse()
 -- CONFIGURAÇÕES
 local Settings = {
     Aimbot = false,
-    AimbotSmoothness = 0.1, -- Menor = mais suave/lento
+    AimbotSmoothness = 0.12,
     KillAura = false,
     KillAuraRange = 18,
     Invisibility = false,
-    JumpPower = 50,
     WalkSpeed = 16,
+    JumpPower = 50,
+    FlyEnabled = false,
+    FlySpeed = 50,
     TeleportTarget = "",
-    TeleportEnabled = false
+    TeleportEnabled = false,
+    BringEnabled = false
 }
 
--- 1. INTERFACE GUI (MENU)
+-- 1. INTERFACE GUI (BLOBLOXITOS AURA)
 local function CreateMenu()
     local ScreenGui = Instance.new("ScreenGui")
-    ScreenGui.Name = "DeepHat_Pro_Menu"
+    ScreenGui.Name = "BlobloxitosAura_Menu"
     ScreenGui.Parent = game:GetService("CoreGui")
 
     local MainFrame = Instance.new("Frame")
-    MainFrame.Size = UDim2.new(0, 200, 0, 300)
-    MainFrame.Position = UDim2.new(1, -210, 1, -310)
-    MainFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+    MainFrame.Size = UDim2.new(0, 200, 0, 350)
+    MainFrame.Position = UDim2.new(1, -210, 1, -360)
+    MainFrame.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
     MainFrame.BorderSizePixel = 0
     MainFrame.Active = true
     MainFrame.Draggable = true
     MainFrame.Parent = ScreenGui
 
     local Title = Instance.new("TextLabel")
-    Title.Size = UDim2.new(1, 0, 0, 30)
-    Title.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
-    Title.Text = "DEEPHAT PRO"
-    Title.TextColor3 = Color3.new(1, 0.8, 0)
+    Title.Size = UDim2.new(1, 0, 0, 35)
+    Title.BackgroundColor3 = Color3.fromRGB(30, 0, 50) -- Roxo escuro
+    Title.Text = "BLOBLOXITOS AURA"
+    Title.TextColor3 = Color3.new(1, 1, 1)
     Title.Font = Enum.Font.GothamBold
     Title.TextSize = 14
     Title.Parent = MainFrame
 
     local Container = Instance.new("ScrollingFrame")
-    Container.Size = UDim2.new(1, -10, 1, -40)
-    Container.Position = UDim2.new(0, 5, 0, 35)
+    Container.Size = UDim2.new(1, -10, 1, -45)
+    Container.Position = UDim2.new(0, 5, 0, 40)
     Container.BackgroundTransparency = 1
     Container.ScrollBarThickness = 2
     Container.Parent = MainFrame
@@ -58,7 +61,7 @@ local function CreateMenu()
     UIListLayout.Parent = Container
     UIListLayout.Padding = UDim.new(0, 5)
 
-    -- Funções de Toggle
+    -- Funções de Criação de UI
     local function CreateToggle(name, callback)
         local Button = Instance.new("TextButton")
         Button.Size = UDim2.new(1, -5, 0, 30)
@@ -73,17 +76,18 @@ local function CreateMenu()
         Button.MouseButton1Click:Connect(function()
             enabled = not enabled
             Button.Text = name .. ": " .. (enabled and "ON" or "OFF")
-            Button.TextColor3 = enabled and Color3.fromRGB(0, 255, 150) or Color3.new(0.8, 0.8, 0.8)
+            Button.TextColor3 = enabled and Color3.fromRGB(170, 0, 255) or Color3.new(0.8, 0.8, 0.8)
             callback(enabled)
         end)
     end
 
-    -- Botões de Combate
-    CreateToggle("Aimbot (Smooth)", function(v) Settings.Aimbot = v end)
-    CreateToggle("KillAura (LMB)", function(v) Settings.KillAura = v end)
+    -- Botões de Combate/Stealth
+    CreateToggle("Aimbot", function(v) Settings.Aimbot = v end)
+    CreateToggle("KillAura", function(v) Settings.KillAura = v end)
     CreateToggle("Invisibility", function(v) Settings.Invisibility = v end)
-    
-    -- Inputs de Movimento
+    CreateToggle("Fly", function(v) Settings.FlyEnabled = v end)
+
+    -- Seção de Movimento
     local SpeedBox = Instance.new("TextBox")
     SpeedBox.Size = UDim2.new(1, -5, 0, 30)
     SpeedBox.PlaceholderText = "WalkSpeed"
@@ -98,35 +102,100 @@ local function CreateMenu()
     JumpBox.Parent = Container
     JumpBox.FocusLost:Connect(function() Settings.JumpPower = tonumber(JumpBox.Text) or 50 end)
 
-    -- Teleport System
-    local TPBox = Instance.new("TextBox")
-    TPBox.Size = UDim2.new(1, -5, 0, 30)
-    TPBox.PlaceholderText = "Target Nickname"
-    TPBox.Text = ""
-    TPBox.Parent = Container
-    TPBox.FocusLost:Connect(function() Settings.TeleportTarget = TPBox.Text end)
+    -- Seção Teleport / Bring
+    local NickBox = Instance.new("TextBox")
+    NickBox.Size = UDim2.new(1, -5, 0, 30)
+    NickBox.PlaceholderText = "Target Nickname"
+    NickBox.Text = ""
+    NickBox.Parent = Container
 
     local TPBtn = Instance.new("TextButton")
-    TPBtn.Size = UDim2.new(1, -5, 0, 30)
-    TPBtn.BackgroundColor3 = Color3.fromRGB(150, 50, 50)
-    TPBtn.Text = "Teleport to Player"
+    TPBtn.Size = UDim2.new(0.48, 0, 0, 30)
+    TPBtn.Position = UDim2.new(0, 0, 0, 0)
+    TPBtn.BackgroundColor3 = Color3.fromRGB(60, 20, 80)
+    TPBtn.Text = "TP To"
     TPBtn.TextColor3 = Color3.new(1, 1, 1)
+    TPBtn.TextSize = 10
     TPBtn.Parent = Container
+
+    local BringBtn = Instance.new("TextButton")
+    BringBtn.Size = UDim2.new(0.48, 0, 0, 30)
+    BringBtn.Position = UDim2.new(0.52, 0, 0, 0)
+    BringBtn.BackgroundColor3 = Color3.fromRGB(80, 20, 20)
+    BringBtn.Text = "Bring"
+    BringBtn.TextColor3 = Color3.new(1, 1, 1)
+    BringBtn.TextSize = 10
+    BringBtn.Parent = Container
+
+    -- Lógica dos Botões de Teleport/Bring
     TPBtn.MouseButton1Click:Connect(function()
+        Settings.TeleportTarget = NickBox.Text
         Settings.TeleportEnabled = true
-        task.wait(0.5)
-        Settings.TeleportEnabled = false
+    end)
+
+    BringBtn.MouseButton1Click:Connect(function()
+        Settings.TeleportTarget = NickBox.Text
+        Settings.BringEnabled = true
     end)
 
     return ScreenGui
 end
 
--- 2. LÓGICA AVANÇADA
+-- 2. LÓGICA DOS SISTEMAS
 
--- Aimbot Melhorado (Usa interpolação de CFrame para evitar snap)
+-- Sistema de Fly (Voo)
+local function UpdateFly()
+    local char = LocalPlayer.Character
+    if not char or not char:FindFirstChild("HumanoidRootPart") then return end
+    local hrp = char.HumanoidRootPart
+    local hum = char:FindFirstChild("Humanoid")
+
+    if Settings.FlyEnabled then
+        -- Desativa gravidade local para voar
+        hum.PlatformStand = true 
+        
+        -- Direção baseada na câmera
+        local direction = Vector3.new(0,0,0)
+        if UserInputService:IsKeyDown(Enum.KeyCode.W) then direction += Camera.CFrame.LookVector end
+        if UserInputService:IsKeyDown(Enum.KeyCode.S) then direction -= Camera.CFrame.LookVector end
+        if UserInputService:IsKeyDown(Enum.KeyCode.A) then direction -= Camera.CFrame.RightVector end
+        if UserInputService:IsKeyDown(Enum.KeyCode.D) then direction += Camera.CFrame.RightVector end
+        
+        hrp.Velocity = direction * Settings.FlySpeed
+    else
+        hum.PlatformStand = false
+    end
+end
+
+-- Sistema de Teleport e Bring
+local function HandleTeleportation()
+    if Settings.TeleportTarget == "" then return end
+    
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p.Name:lower():find(Settings.TeleportTarget:lower()) and p.Character then
+            local targetHRP = p.Character:FindFirstChild("HumanoidRootPart")
+            local myHRP = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+
+            if targetHRP and myHRP then
+                if Settings.TeleportEnabled then
+                    -- Teleport para o player (Suave)
+                    TweenService:Create(myHRP, TweenInfo.new(0.5), {CFrame = targetHRP.CFrame * CFrame.new(0, 5, 0)}):Play()
+                    Settings.TeleportEnabled = false
+                elseif Settings.BringEnabled then
+                    -- Bring: Puxa o player até você (Apenas se você for o dono da ação)
+                    -- Nota: Isso funciona melhor em jogos com física fraca
+                    TweenService:Create(targetHRP, TweenInfo.new(0.5), {CFrame = myHRP.CFrame * CFrame.new(0, 0, -3)}):Play()
+                    Settings.BringEnabled = false
+                end
+            end
+            break
+        end
+    end
+end
+
+-- Aimbot Suave
 local function UpdateAimbot()
     if not Settings.Aimbot then return end
-    
     local target = nil
     local minDistance = math.huge
 
@@ -146,50 +215,13 @@ local function UpdateAimbot()
 
     if target and target.Character then
         local targetHRP = target.Character.HumanoidRootPart
-        -- Suavização usando Lerp para simular movimento de mão humana
         Camera.CFrame = Camera.CFrame:Lerp(CFrame.new(Camera.CFrame.Position, targetHRP.Position), Settings.AimbotSmoothness)
     end
 end
 
--- KillAura (Simulação de Combate)
-local function UpdateKillAura()
-    if not Settings.KillAura then return end
-    
-    for _, p in ipairs(Players:GetPlayers()) do
-        if p ~= LocalPlayer and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
-            local dist = (LocalPlayer.Character.HumanoidRootPart.Position - p.Character.HumanoidRootPart.Position).Magnitude
-            if dist <= Settings.KillAuraRange then
-                -- Aqui você deve inserir o disparo do RemoteEvent de ataque do jogo
-                -- Exemplo: game.ReplicatedStorage.Combat:FireServer("Attack", p.Character)
-            end
-        end
-    end
-end
+-- 3. LOOP PRINCIPAL (Performance)
 
--- Teleport System
-local function HandleTeleport()
-    if not Settings.TeleportEnabled or Settings.TeleportTarget == "" then return end
-    
-    for _, p in ipairs(Players:GetPlayers()) do
-        if p.Name:lower():find(Settings.TeleportTarget:lower()) and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
-            local targetPos = p.Character.HumanoidRootPart.Position
-            local myChar = LocalPlayer.Character
-            
-            if myChar and myChar:FindFirstChild("HumanoidRootPart") then
-                -- Teleport suave usando Tween para evitar detecção de movimento instantâneo
-                local tween = TweenService:Create(myChar.HumanoidRootPart, TweenInfo.new(0.5, Enum.EasingStyle.Quad), {CFrame = CFrame.new(targetPos + Vector3.new(0, 5, 0))})
-                tween:Play()
-                print("[DeepHat] Teleportado para: " .. p.Name)
-            end
-            break
-        end
-    end
-    Settings.TeleportEnabled = false
-end
-
--- 3. LOOP DE EXECUÇÃO (Otimizado)
-
--- Loop de Física e Movimento (Baixa frequência)
+-- Loop de Física (Baixa frequência)
 task.spawn(function()
     while true do
         local char = LocalPlayer.Character
@@ -204,27 +236,21 @@ task.spawn(function()
     end
 end)
 
--- Loop de Combate (Alta frequência)
+-- Loop de Combate e Movimento (Alta frequência)
 RunService.RenderStepped:Connect(function()
     UpdateAimbot()
-    UpdateKillAura()
-    HandleTeleport()
+    HandleTeleportation()
     
-    -- Invisibilidade (Melhorada para partes locais)
-    if Settings.Invisibility and LocalPlayer.Character then
-        for _, part in ipairs(LocalPlayer.Character:GetDescendants()) do
-            if part:IsA("BasePart") then
-                part.Transparency = 1
-            elseif part:IsA("Decal") then
-                part.Transparency = 1
-            end
-        end
+    if Settings.FlyEnabled then
+        UpdateFly()
+    end
+    
+    -- KillAura (Placeholder para RemoteEvent)
+    if Settings.KillAura then
+        -- Implementar disparo de Remote aqui
     end
 end)
 
 -- Inicialização
 local Menu = CreateMenu()
-print("[DeepHat] Framework v3 Ativado. Use o Menu para configurar.")
--- Inicialização
-local Menu = CreateMenu()
-print("[DeepHat] Menu Carregado. Use a GUI para controlar.")
+print("[Blobloxitos Aura] Sistema Carregado. Use o Menu para controlar.")
