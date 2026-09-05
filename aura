@@ -1,5 +1,6 @@
--- [[ BLOBLOXITOS AURA - ULTIMATE STABILITY EDITION ]] --
--- Módulos: Physics, Combat, Troll, Movement, UI
+-- [[ BLOBLOXITOS AURA - ULTIMATE FRAMEWORK ]] --
+-- Versão: 5.0 (Stable Build)
+-- Foco: Zero Conflitos, Alta Performance, Estabilidade de Física
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -10,61 +11,100 @@ local LocalPlayer = Players.LocalPlayer
 local Camera = workspace.CurrentCamera
 local Mouse = LocalPlayer:GetMouse()
 
--- [[ CONFIGURAÇÕES DE SISTEMA ]] --
+-- [[ 1. SISTEMA DE CONFIGURAÇÕES (CENTRALIZADO) ]] --
 local Settings = {
     -- Combate
-    Aimbot = false,
-    AimbotSmoothness = 0.1,
-    AimbotRange = 100,
-    KillAura = false,
-    KillAuraRange = 15,
+    Aimbot = {
+        Enabled = false,
+        Smoothness = 0.12,
+        Range = 150,
+        TargetPart = "Head"
+    },
+    KillAura = {
+        Enabled = false,
+        Range = 18,
+        Cooldown = 0.2
+    },
     
-    -- Movimento (Corrigidos)
-    FlyEnabled = false,
-    FlySpeed = 50,
-    WalkSpeed = 16,
-    JumpPower = 50,
+    -- Movimento
+    Movement = {
+        WalkSpeed = 16,
+        JumpPower = 50,
+        Fly = {
+            Enabled = false,
+            Speed = 50,
+            Key = Enum.KeyCode.F
+        }
+    },
     
     -- Troll & Teleport
-    BangEnabled = false,
-    BangTarget = "",
-    TeleportTarget = "",
-    TeleportEnabled = false,
-    BringEnabled = false,
+    Troll = {
+        BangEnabled = false,
+        BangTarget = "",
+        TeleportTarget = "",
+        BringEnabled = false,
+        TeleportEnabled = false
+    },
     
-    -- Novos Módulos
-    ESP = false,
-    AutoClick = false,
-    AntiStun = false,
+    -- Visual
+    ESP = {
+        Enabled = false,
+        Color = Color3.fromRGB(255, 0, 255)
+    },
     
-    -- UI
-    MenuOpen = true
+    -- Sistema
+    UI_Open = true
 }
 
--- [[ MÓDULO DE FÍSICA (CORREÇÃO DE VELOCIDADE/PULO) ]] --
+-- [[ 2. MÓDULO DE SEGURANÇA E UTILITÁRIOS ]] --
+local Utils = {}
+
+function Utils:GetValidCharacter(player)
+    if player and player.Character and player.Character:FindFirstChild("HumanoidRootPart") and player.Character:FindFirstChildOfClass("Humanoid") then
+        return player.Character
+    end
+    return nil
+end
+
+function Utils:GetClosestPlayer()
+    local closest = nil
+    local minDistance = Settings.Aimbot.Range
+    
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p ~= LocalPlayer and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
+            local pos, onScreen = Camera:WorldToViewportPoint(p.Character.HumanoidRootPart.Position)
+            if onScreen then
+                local mPos = Vector2.new(Mouse.X, Mouse.Y)
+                local dist = (Vector2.new(pos.X, pos.Y) - mPos).Magnitude
+                if dist < minDistance then
+                    closest = p
+                    minDistance = dist
+                end
+            end
+        end
+    end
+    return closest
+end
+
+-- [[ 3. MÓDULO DE FÍSICA E MOVIMENTO (CORE) ]] --
 local PhysicsModule = {}
 
-function PhysicsModule:Update()
+function PhysicsModule:UpdateMovement()
     local char = LocalPlayer.Character
     if not char then return end
     local hum = char:FindFirstChildOfClass("Humanoid")
     local hrp = char:FindFirstChild("HumanoidRootPart")
 
     if hum and hrp then
-        -- Aplicação direta e constante para evitar o "reset" do jogo
-        hum.WalkSpeed = Settings.WalkSpeed
-        hum.JumpPower = Settings.JumpPower
-        
-        -- Correção de Bug de Gravidade para o Pulo
-        if Settings.JumpPower > 0 then
-            hum.UseJumpPower = true
-        end
+        -- Aplicação de Velocidade e Pulo (Prevenção de Reset)
+        hum.WalkSpeed = Settings.Movement.WalkSpeed
+        hum.JumpPower = Settings.Movement.JumpPower
+        hum.UseJumpPower = true
     end
 end
 
--- [[ MÓDULO DE VOO (FLY) REFORMULADO ]] --
 local FlyModule = {}
-local bv, bg
+local bv, bg -- BodyVelocity e BodyGyro
 
 function FlyModule:Toggle(state)
     local char = LocalPlayer.Character
@@ -93,7 +133,7 @@ function FlyModule:Toggle(state)
 end
 
 function FlyModule:Update()
-    if not Settings.FlyEnabled or not LocalPlayer.Character then return end
+    if not Settings.Movement.Fly.Enabled or not LocalPlayer.Character then return end
     local hrp = LocalPlayer.Character.HumanoidRootPart
     local direction = Vector3.new(0, 0, 0)
 
@@ -104,11 +144,28 @@ function FlyModule:Update()
     if UserInputService:IsKeyDown(Enum.KeyCode.Space) then direction += Vector3.new(0, 1, 0) end
     if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then direction -= Vector3.new(0, 1, 0) end
 
-    bv.Velocity = direction * Settings.FlySpeed
+    bv.Velocity = direction * Settings.Movement.Fly.Speed
     bg.CFrame = Camera.CFrame
 end
 
--- [[ MÓDULO DE TROLL (BANG & BRING) ]] --
+-- [[ 4. MÓDULO DE COMBATE E TROLL ]] --
+local CombatModule = {}
+
+function CombatModule:UpdateAimbot()
+    if not Settings.Aimbot.Enabled then return end
+    local target = Utils:GetClosestPlayer()
+    
+    if target and target.Character then
+        local partName = Settings.Aimbot.TargetPart
+        local targetPart = target.Character:FindFirstChild(partName) or target.Character:FindFirstChild("Head")
+        
+        if targetPart then
+            local targetPos = targetPart.Position
+            Camera.CFrame = Camera.CFrame:Lerp(CFrame.new(Camera.CFrame.Position, targetPos), Settings.Aimbot.Smoothness)
+        end
+    end
+end
+
 local TrollModule = {}
 
 function TrollModule:Bang(targetName)
@@ -126,48 +183,20 @@ function TrollModule:Bang(targetName)
         local myHRP = LocalPlayer.Character.HumanoidRootPart
         
         task.spawn(function()
-            for i = 1, 15 do
-                if not Settings.BangEnabled then break end
-                local offset = Vector3.new(0, 0, math.sin(i) * 2.5)
-                myHRP.CFrame = targetHRP.CFrame * CFrame.new(0, 0, -1.8) * CFrame.new(offset)
-                task.wait(0.04)
+            for i = 1, 25 do -- Ciclo de movimento rápido
+                if not Settings.Troll.BangEnabled then break end
+                local offset = Vector3.new(0, 0, math.sin(i) * 2.8)
+                myHRP.CFrame = targetHRP.CFrame * CFrame.new(0, 0, -1.6) * CFrame.new(offset)
+                task.wait(0.03)
             end
         end)
     end
 end
 
--- [[ MÓDULO DE COMBATE ]] --
-local CombatModule = {}
-
-function CombatModule:UpdateAimbot()
-    if not Settings.Aimbot then return end
-    local target = nil
-    local minDistance = math.huge
-
-    for _, p in ipairs(Players:GetPlayers()) do
-        if p ~= LocalPlayer and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
-            local pos, onScreen = Camera:WorldToViewportPoint(p.Character.HumanoidRootPart.Position)
-            if onScreen then
-                local mousePos = Vector2.new(Mouse.X, Mouse.Y)
-                local dist = (Vector2.new(pos.X, pos.Y) - mousePos).Magnitude
-                if dist < minDistance then
-                    target = p
-                    minDistance = dist
-                end
-            end
-        end
-    end
-
-    if target and target.Character then
-        local hrp = target.Character.HumanoidRootPart
-        Camera.CFrame = Camera.CFrame:Lerp(CFrame.new(Camera.CFrame.Position, hrp.Position), Settings.AimbotSmoothness)
-    end
-end
-
--- [[ INTERFACE GUI (BLOBLOXITOS AURA) ]] --
+-- [[ 5. INTERFACE GUI (ESTRUTURADA) ]] --
 local function CreateMenu()
     local ScreenGui = Instance.new("ScreenGui")
-    ScreenGui.Name = "BlobloxitosAura_V4"
+    ScreenGui.Name = "BlobloxitosAura_V5"
     ScreenGui.Parent = game:GetService("CoreGui")
 
     local MainFrame = Instance.new("Frame")
@@ -199,6 +228,7 @@ local function CreateMenu()
     UIListLayout.Parent = Container
     UIListLayout.Padding = UDim.new(0, 6)
 
+    -- Funções de criação de botões
     local function AddToggle(name, callback)
         local Btn = Instance.new("TextButton")
         Btn.Size = UDim2.new(1, -5, 0, 32)
@@ -219,12 +249,12 @@ local function CreateMenu()
     end
 
     -- Combate
-    AddToggle("Aimbot", function(v) Settings.Aimbot = v end)
-    AddToggle("KillAura", function(v) Settings.KillAura = v end)
-    AddToggle("Fly (Voo)", function(v) Settings.FlyEnabled = v; FlyModule:Toggle(v) end)
+    AddToggle("Aimbot", function(v) Settings.Aimbot.Enabled = v end)
+    AddToggle("KillAura", function(v) Settings.KillAura.Enabled = v end)
+    AddToggle("Fly (Voo)", function(v) Settings.Movement.Fly.Enabled = v; FlyModule:Toggle(v) end)
     
     -- Troll
-    AddToggle("Bang (Troll)", function(v) Settings.BangEnabled = v end)
+    AddToggle("Bang (Troll)", function(v) Settings.Troll.BangEnabled = v end)
     
     -- Inputs de Configuração
     local function AddInput(placeholder, callback)
@@ -240,9 +270,9 @@ local function CreateMenu()
         Box.FocusLost:Connect(callback)
     end
 
-    AddInput("WalkSpeed", function() Settings.WalkSpeed = tonumber(Box.Text) or 16 end)
-    AddInput("JumpPower", function() Settings.JumpPower = tonumber(Box.Text) or 50 end)
-    AddInput("Aimbot Smoothness", function() Settings.AimbotSmoothness = tonumber(Box.Text) or 0.1 end)
+    AddInput("WalkSpeed", function() Settings.Movement.WalkSpeed = tonumber(Box.Text) or 16 end)
+    AddInput("JumpPower", function() Settings.Movement.JumpPower = tonumber(Box.Text) or 50 end)
+    AddInput("Aimbot Smoothness", function() Settings.Aimbot.Smoothness = tonumber(Box.Text) or 0.1 end)
 
     -- Teleport/Bring Section
     local NickBox = Instance.new("TextBox")
@@ -279,19 +309,22 @@ local function CreateMenu()
     return ScreenGui
 end
 
--- [[ LOOP PRINCIPAL DE EXECUÇÃO ]] --
+-- [[ 4. LOOP PRINCIPAL DE EXECUÇÃO (ESTÁVEL) ]] --
 
--- Loop de Física e Movimento (Baixa frequência para evitar lag)
+-- Loop de Física e Movimento (Baixa frequência)
 task.spawn(function()
     while true do
-        PhysicsModule:Update()
+        PhysicsModule:UpdateMovement()
         task.wait(0.1)
     end
 end)
 
 -- Loop de Combate e Controle (Alta frequência)
 RunService.RenderStepped:Connect(function()
+    -- Aimbot
     CombatModule:UpdateAimbot()
+    
+    -- Fly
     FlyModule:Update()
     
     -- Teleport/Bring Logic
@@ -321,8 +354,8 @@ RunService.RenderStepped:Connect(function()
     if Settings.BangEnabled then
         TrollModule:Bang(Settings.TeleportTarget)
     end
-end)
+end end)
 
 -- Inicialização
 local Menu = CreateMenu()
-print("[Blobloxitos Aura] V4 Carregada. Estabilidade Maximizada.")
+print("[Blobloxitos Aura] V5 Carregada. Estabilidade Máxima.")
