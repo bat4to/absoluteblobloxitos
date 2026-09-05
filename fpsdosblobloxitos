@@ -1,5 +1,5 @@
--- [[ fpsdosblobloxitos - OVERDRIVE EDITION ]] --
--- Foco: Rotação de Ângulo Direta e Trigger por Raycast
+-- [[ fpsdosblobloxitos - PRECISION EDITION (REVISED) ]] --
+-- Lógica: Aimbot (Círculo Branco Menor) + Triggerbot (Ponto Azul Central)
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -7,37 +7,37 @@ local UserInputService = game:GetService("UserInputService")
 local LocalPlayer = Players.LocalPlayer
 local Camera = workspace.CurrentCamera
 
--- Configurações de Combate Extremo
+-- Configurações de Precisão Ajustadas
 local Settings = {
     ESP_Enabled = true,
     Aimbot_Enabled = true,
     Triggerbot_Enabled = true,
-    FOV_Radius = 150,
-    Aimbot_Smoothness = 0.25, -- Quanto maior, mais rápido o giro
-    Trigger_Sensitivity = 0.1, -- Sensibilidade do disparo
-    Color_FOV = Color3.fromRGB(255, 255, 255),
-    Color_Trigger = Color3.fromRGB(255, 0, 0)
+    FOV_Radius = 80,          -- REDUZIDO: Círculo branco agora é menor
+    Trigger_Radius = 12,      -- Aumentado levemente para garantir o clique no ponto azul
+    Aimbot_Smoothness = 0.35, -- AUMENTADO: Mira puxa com mais força e rapidez
+    Color_FOV = Color3.fromRGB(255, 255, 255), -- Branco
+    Color_Trigger = Color3.fromRGB(0, 170, 255) -- Azul
 }
 
--- Variáveis de Desenho
-local FOVCircle = Drawing.new("Circle")
+-- Variáveis de Desenho (API de Desenho)
+local FOVCircle = Drawing.new("Circle") -- Círculo de busca (Branco)
 FOVCircle.Visible = true
 FOVCircle.Radius = Settings.FOV_Radius
 FOVCircle.Color = Settings.Color_FOV
 FOVCircle.Thickness = 1
-FOVCircle.Transparency = 0.3
+FOVCircle.Transparency = 0.4
 FOVCircle.Filled = false
 
-local TriggerCircle = Drawing.new("Circle")
-TriggerCircle.Visible = true
-TriggerCircle.Radius = 20 -- Tamanho da zona de tiro
-TriggerCircle.Color = Settings.Color_Trigger
-TriggerCircle.Thickness = 2
-TriggerCircle.Transparency = 0.5
-TriggerCircle.Filled = false
+local TriggerPoint = Drawing.new("Circle") -- Ponto de disparo (Azul)
+TriggerPoint.Visible = true
+TriggerPoint.Radius = Settings.Trigger_Radius
+TriggerPoint.Color = Settings.Color_Trigger
+TriggerPoint.Thickness = 2
+TriggerPoint.Transparency = 0.7
+TriggerPoint.Filled = true
 
--- [[ FUNÇÃO PARA DETECTAR O ALVO MAIS PRÓXIMO DO CENTRO ]] --
-local function GetClosestTarget()
+-- [[ FUNÇÃO PARA ENCONTRAR O ALVO MAIS PRÓXIMO DO CENTRO ]] --
+local function GetTarget()
     local ClosestTarget = nil
     local ShortestDistance = Settings.FOV_Radius
     local ScreenCenter = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
@@ -50,9 +50,12 @@ local function GetClosestTarget()
 
             if head and hum and hum.Health > 0 then
                 local pos, onScreen = Camera:WorldToViewportPoint(head.Position)
+                
                 if onScreen then
                     local targetPos = Vector2.new(pos.X, pos.Y)
                     local distance = (ScreenCenter - targetPos).Magnitude
+
+                    -- Verifica se o alvo está dentro do raio da bola branca (FOV)
                     if distance < ShortestDistance then
                         ClosestTarget = player
                         ShortestDistance = distance
@@ -64,20 +67,22 @@ local function GetClosestTarget()
     return ClosestTarget
 end
 
--- [[ SISTEMA DE ESP (CONTORNO E NOME) ]] --
+-- [[ SISTEMA DE ESP ]] --
 local function ApplyESP(player)
     local function Setup()
         if not player.Character then return end
         local char = player.Character
         
+        -- Contorno Branco (ESP)
         local Highlight = char:FindFirstChild("ESP_Highlight") or Instance.new("Highlight")
         Highlight.Name = "ESP_Highlight"
         Highlight.Parent = char
         Highlight.FillTransparency = 0.7
-        Highlight.FillColor = Color3.new(1, 1, 1)
         Highlight.OutlineColor = Color3.new(1, 1, 1)
+        Highlight.OutlineTransparency = 0
         Highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
         
+        -- Nome (BillboardGui)
         local Billboard = char:FindFirstChild("ESP_Name") or Instance.new("BillboardGui")
         Billboard.Name = "ESP_Name"
         Billboard.Parent = char
@@ -95,44 +100,42 @@ local function ApplyESP(player)
     end
     
     task.spawn(function()
-        while task.wait(3) do
+        while task.wait(2) do
             if Settings.ESP_Enabled then Setup() end
         end
     end)
 end
 
--- [[ LOOP DE COMBATE (Aimbot de Rotação e Trigger de Raycast) ]] --
+-- [[ LOOP PRINCIPAL ]] --
 RunService.RenderStepped:Connect(function()
     local ScreenCenter = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
-    FOVCircle.Position = ScreenCenter
-    TriggerCircle.Position = ScreenCenter
     
-    local TargetPlayer = GetClosestTarget()
+    -- Atualiza posições visuais
+    FOVCircle.Position = ScreenCenter
+    TriggerPoint.Position = ScreenCenter
+    
+    local TargetPlayer = GetTarget()
     
     if TargetPlayer and TargetPlayer.Character and TargetPlayer.Character:FindFirstChild("Head") then
         local targetHead = TargetPlayer.Character.Head
+        local headPos, onScreen = Camera:WorldToViewportPoint(targetHead.Position)
         
-        -- 1. AIMBOT (Rotação de Câmera Forçada)
-        if Settings.Aimbot_Enabled then
-            -- Calcula a direção para o alvo
-            local targetPos = targetHead.Position
-            local currentPos = Camera.CFrame.Position
+        if onScreen then
+            -- 1. LÓGICA DO AIMBOT (Puxada mais forte)
+            if Settings.Aimbot_Enabled then
+                -- Interpolação para mover a câmera em direção à cabeça
+                Camera.CFrame = Camera.CFrame:Lerp(CFrame.new(Camera.CFrame.Position, targetHead.Position), Settings.Aimbot_Smoothness)
+            end
             
-            -- Cria uma nova CFrame olhando para o alvo e aplica suavidade
-            local lookAt = CFrame.new(currentPos, targetPos)
-            Camera.CFrame = Camera.CFrame:Lerp(lookAt, Settings.Aimbot_Smoothness)
-        end
-        
-        -- 2. TRIGGERBOT (Simulação de Raycast para o Disparo)
-        if Settings.Triggerbot_Enabled then
-            -- Verifica se o alvo está no centro da tela (dentro do círculo vermelho)
-            local headPos, onScreen = Camera:WorldToViewportPoint(targetHead.Position)
-            local targetScreenPos = Vector2.new(headPos, 0)
-            local distanceToCenter = (ScreenCenter - targetScreenPos).Magnitude
-            
-            if distanceToCenter < Settings.Trigger_Radius then
-                -- Emula o clique de forma mais agressiva
-                mouse1click()
+            -- 2. LÓGICA DO TRIGGERBOT (Atira quando o alvo toca o ponto azul)
+            if Settings.Triggerbot_Enabled then
+                local targetScreenPos = Vector2.new(headPos, 0)
+                local distanceToCenter = (ScreenCenter - targetScreenPos).Magnitude
+                
+                -- Se a distância da cabeça ao centro for menor que o raio do ponto azul
+                if distanceToCenter < Settings.Trigger_Radius then
+                    mouse1click() -- Simula o disparo
+                end
             end
         end
     end
@@ -144,6 +147,7 @@ UserInputService.InputBegan:Connect(function(input, processed)
     if input.KeyCode == Enum.KeyCode.G then
         Settings.Aimbot_Enabled = not Settings.Aimbot_Enabled
         Settings.Triggerbot_Enabled = not Settings.Triggerbot_Enabled
+        print("Status: AIM/TRIGGER ->", Settings.Aimbot_Enabled)
     end
 end)
 
@@ -156,4 +160,4 @@ Players.PlayerAdded:Connect(function(player)
     ApplyESP(player)
 end)
 
-print("fpsdosblobloxitos [OVERDRIVE] Carregado!")
+print("fpsdosblobloxitos [REVISED] carregado!")
