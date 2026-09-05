@@ -1,187 +1,190 @@
--- DeepHat Ultimate Combat & Stealth Framework
--- Módulos: Aimbot, KillAura, ESP, Hitbox, Movement, Stealth
+-- DeepHat Advanced Combat Framework v2 (GUI Edition)
+-- Focado em Estabilidade e Performance
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
+
 local LocalPlayer = Players.LocalPlayer
 local Mouse = LocalPlayer:GetMouse()
+local Camera = workspace.CurrentCamera
 
--- CONFIGURAÇÕES DO USUÁRIO (Input de Valores)
-local CONFIG = {
-    AimbotEnabled = false,
-    AimbotKey = Enum.KeyCode.R,
-    KillAuraEnabled = false,
-    KillAuraKey = Enum.UserInputType.MouseButton1,
-    ESPEnabled = true,
-    HitboxSize = 15, -- Tamanho do Hitbox Expandido
+-- Tabela de Configurações (Estado do Hack)
+local Settings = {
+    Aimbot = false,
+    KillAura = false,
+    ESP = false,
+    Hitbox = false,
+    Invisibility = false,
     WalkSpeed = 16,
     Gravity = 196.2,
-    InvisibilityEnabled = false,
-    AimbotSmoothness = 0.2, -- Suavidade da mira (0 a 1)
+    AimbotSmoothness = 0.15,
+    HitboxSize = 12,
     KillAuraRange = 15
 }
 
--- VARIÁVEIS DE CONTROLE INTERNO
-local camera = workspace.CurrentCamera
-local targetPlayer = nil
+-- 1. CRIAÇÃO DA INTERFACE (GUI) NO CANTO INFERIOR DIREITO
+local function CreateMenu()
+    local ScreenGui = Instance.new("ScreenGui")
+    ScreenGui.Name = "DeepHat_Menu"
+    ScreenGui.Parent = game:GetService("CoreGui") -- Usa CoreGui para não sumir ao morrer
 
--- 1. SISTEMA DE INVISIBILIDADE (Bypass de Renderização)
--- Em vez de apenas esconder partes, vamos manipular a transparência e o estado de renderização
-local function applyInvisibility(state)
-    local char = LocalPlayer.Character
-    if not char then return end
-    
-    for _, part in ipairs(char:GetDescendants()) do
-        if part:IsA("BasePart") or part:IsA("Decal") then
-            if state then
-                part.Transparency = 1 -- Totalmente invisível
-                if part:IsA("BasePart") then part.CanCollide = false end
-            else
-                part.Transparency = 0 -- Visibilidade padrão
-                part.CanCollide = true
-            end
-        end
+    local MainFrame = Instance.new("Frame")
+    MainFrame.Name = "MainFrame"
+    MainFrame.Size = UDim2.new(0, 180, 0, 250)
+    MainFrame.Position = UDim2.new(1, -190, 1, -260) -- Canto inferior direito
+    MainFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+    MainFrame.BorderSizePixel = 0
+    MainFrame.Active = true
+    MainFrame.Draggable = true -- Permite mover o menu
+    MainFrame.Parent = ScreenGui
+
+    local Title = Instance.new("TextLabel")
+    Title.Size = UDim2.new(1, 0, 0, 30)
+    Title.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+    Title.Text = "DEEPHAT MENU"
+    Title.TextColor3 = Color3.new(1, 1, 1)
+    Title.TextSize = 14
+    Title.Font = Enum.Font.GothamBold
+    Title.Parent = MainFrame
+
+    local Container = Instance.new("ScrollingFrame")
+    Container.Size = UDim2.new(1, -10, 1, -40)
+    Container.Position = UDim2.new(0, 5, 0, 35)
+    Container.BackgroundTransparency = 1
+    Container.ScrollBarThickness = 2
+    Container.Parent = MainFrame
+
+    local UIListLayout = Instance.new("UIListLayout")
+    UIListLayout.Parent = Container
+    UIListLayout.Padding = UDim.new(0, 5)
+
+    -- Função para criar botões de Toggle
+    local function CreateToggle(name, callback)
+        local Button = Instance.new("TextButton")
+        Button.Size = UDim2.new(1, -5, 0, 30)
+        Button.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
+        Button.Text = name .. ": OFF"
+        Button.TextColor3 = Color3.new(0.8, 0.8, 0.8)
+        Button.Font = Enum.Font.Gotham
+        Button.TextSize = 12
+        Button.Parent = Container
+
+        local enabled = false
+        Button.MouseButton1Click:Connect(function()
+            enabled = not enabled
+            Button.Text = name .. ": " .. (enabled and "ON" or "OFF")
+            Button.TextColor3 = enabled and Color3.fromRGB(0, 255, 150) or Color3.new(0.8, 0.8, 0.8)
+            callback(enabled)
+        end)
     end
-    print("[DeepHat] Invisibilidade: " .. (state and "Ativada" or "Desativada"))
+
+    -- Criando as opções no menu
+    CreateToggle("Aimbot (R)", function(v) Settings.Aimbot = v end)
+    CreateToggle("KillAura (LMB)", function(v) Settings.KillAura = v end)
+    CreateToggle("ESP", function(v) Settings.ESP = v end)
+    CreateToggle("Hitbox Expander", function(v) Settings.Hitbox = v end)
+    CreateToggle("Invisibility", function(v) Settings.Invisibility = v end)
+    
+    -- Input para Velocidade e Gravidade (Simples)
+    local SpeedInput = Instance.new("TextBox")
+    SpeedInput.Size = UDim2.new(1, -5, 0, 30)
+    SpeedInput.PlaceholderText = "WalkSpeed (Ex: 25)"
+    SpeedInput.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
+    SpeedInput.TextColor3 = Color3.new(1, 1, 1)
+    SpeedInput.Text = "WalkSpeed"
+    SpeedInput.Parent = Container
+    SpeedInput.FocusLost:Connect(function()
+        local val = tonumber(SpeedInput.Text)
+        if val then Settings.WalkSpeed = val end
+    end)
+
+    return ScreenGui
 end
 
--- 2. AIMBOT (Com Suavidade para evitar detecção de snap)
-local function getClosestPlayerToCursor()
-    local closest = nil
-    local shortestDistance = math.huge
+-- 2. LÓGICA DE COMBATE E SISTEMAS (OTIMIZADA)
 
-    for _, player in ipairs(Players:GetPlayers()) do
-        if player ~= LocalPlayer and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
-            local pos, onScreen = camera:WorldToViewportPoint(player.Character.HumanoidRootPart.Position)
+-- Aimbot com interpolação suave
+local function UpdateAimbot()
+    if not Settings.Aimbot then return end
+    
+    local target = nil
+    local dist = math.huge
+
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p ~= LocalPlayer and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
+            local pos, onScreen = Camera:WorldToViewportPoint(p.Character.HumanoidRootPart.Position)
             if onScreen then
                 local mousePos = Vector2.new(Mouse.X, Mouse.Y)
-                local distance = (Vector2.new(pos.X, pos.Y) - mousePos).Magnitude
-                if distance < shortestDistance then
-                    closest = player
-                    shortestDistance = distance
+                local screenDist = (Vector2.new(pos.X, pos.Y) - mousePos).Magnitude
+                if screenDist < dist then
+                    target = p
+                    dist = screenDist
                 end
             end
         end
     end
-    return closest
+
+    if target and target.Character then
+        local hrp = target.Character.HumanoidRootPart
+        Camera.CFrame = Camera.CFrame:Lerp(CFrame.new(Camera.CFrame.Position, hrp.Position), Settings.AimbotSmoothness)
+    end
 end
 
--- 3. HITBOX EXPANDER (Manipulação de CFrame e Size)
-local function expandHitboxes(size)
-    for _, player in ipairs(Players:GetPlayers()) do
-        if player ~= LocalPlayer and player.Character and player.Character:FindFirstChild("Head") then
-            local head = player.Character.Head
-            head.Size = Vector3.new(size, size, size)
-            head.Transparency = 0.7 -- Semi-transparente para visualização
-            head.CanCollide = false
+-- Hitbox Expander (Apenas quando ativado)
+local function UpdateHitboxes()
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p ~= LocalPlayer and p.Character then
+            local head = p.Character:FindFirstChild("Head")
+            if head then
+                if Settings.Hitbox then
+                    head.Size = Vector3.new(Settings.HitboxSize, Settings.HitboxSize, Settings.HitboxSize)
+                    head.Transparency = 0.7
+                    head.CanCollide = false
+                else
+                    head.Size = Vector3.new(1, 1, 1) -- Tamanho padrão
+                    head.Transparency = 0
+                end
+            end
         end
     end
 end
 
--- 4. ESP (Nomes e Contornos)
-local function drawESP(player)
-    if not player.Character or not player.Character:FindFirstChild("HumanoidRootPart") then return end
-    
-    -- Implementação simplificada via Highlight (mais moderna e menos detectável)
-    local highlight = player.Character:FindFirstChild("ESP_Highlight") or Instance.new("Highlight")
-    highlight.Name = "ESP_Highlight"
-    highlight.Parent = player.Character
-    highlight.FillColor = Color3.fromRGB(255, 0, 0)
-    highlight.OutlineColor = Color3.fromRGB(255, 255, 255)
-    highlight.FillTransparency = 0.5
-    
-    -- Nome do Jogador (BillboardGui)
-    local billboard = player.Character:FindFirstChild("ESP_Name") or Instance.new("BillboardGui")
-    billboard.Name = "ESP_Name"
-    billboard.Parent = player.Character
-    billboard.Adornee = player.Character:FindFirstChild("Head")
-    billboard.Size = UDim2.new(0, 100, 0, 50)
-    billboard.StudsOffset = Vector3.new(0, 3, 0)
-    billboard.AlwaysOnTop = true
-    
-    local textLabel = billboard:FindFirstChild("TextLabel") or Instance.new("TextLabel")
-    textLabel.Parent = billboard
-    textLabel.BackgroundTransparency = 1
-    textLabel.Size = UDim2.new(1, 0, 1, 0)
-    textLabel.Text = player.Name
-    textLabel.TextColor3 = Color3.new(1, 1, 1)
-    textLabel.TextScaled = true
-end
-
--- 5. LOOP DE CONTROLE (Aimbot, KillAura e Física)
-RunService.RenderStepped:Connect(function()
-    -- Aimbot Logic
-    if CONFIG.AimbotEnabled and targetPlayer and targetPlayer.Character then
-        local hrp = targetPlayer.Character:FindFirstChild("HumanoidRootPart")
-        if hrp then
-            local targetPos = hrp.Position
-            local currentPos = camera.CFrame.Position
-            local direction = (targetPos - currentPos).Unit
-            
-            -- Interpolação para suavidade (Anti-Snap)
-            camera.CFrame = camera.CFrame:Lerp(CFrame.new(currentPos, targetPos), CONFIG.AimbotSmoothness)
+-- 3. LOOP PRINCIPAL (CONTROLE DE PERFORMANCE)
+task.spawn(function()
+    while task.wait(0.1) do -- Não roda em cada frame para evitar lag
+        -- Física
+        if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then
+            LocalPlayer.Character.Humanoid.WalkSpeed = Settings.WalkSpeed
+            workspace.Gravity = Settings.Gravity
         end
-    end
 
-    -- KillAura Logic (Simulando cliques ou disparando Remotes)
-    if CONFIG.KillAuraEnabled then
-        local target = getClosestPlayerToCursor()
-        if target and target.Character and target.Character:FindFirstChild("HumanoidRootPart") then
-            local dist = (LocalPlayer.Character.HumanoidRootPart.Position - target.Character.HumanoidRootPart.Position).Magnitude
-            if dist <= CONFIG.KillAuraRange then
-                -- Aqui você dispararia o Remote de ataque do jogo
-                -- Exemplo: game.ReplicatedStorage.Combat:FireServer("Attack", target)
+        -- Hitbox e ESP
+        UpdateHitboxes()
+        
+        -- Invisibilidade (Simples)
+        if LocalPlayer.Character then
+            for _, part in ipairs(LocalPlayer.Character:GetDescendants()) do
+                if part:IsA("BasePart") then
+                    part.Transparency = Settings.Invisibility and 1 or 0
+                end
             end
         end
     end
 end)
 
--- 6. INPUT HANDLER (Teclas de Ativação)
-UserInputService.InputBegan:Connect(function(input, processed)
-    if processed then return end
-
-    -- Toggle Aimbot (R)
-    if input.KeyCode == CONFIG.AimbotKey then
-        CONFIG.AimbotEnabled = not CONFIG.AimbotEnabled
-        print("[DeepHat] Aimbot: " .. (CONFIG.AimbotEnabled and "ON" or "OFF"))
-    end
-
-    -- Toggle KillAura (Botão Esquerdo)
-    if input.UserInputType == CONFIG.KillAuraKey then
-        CONFIG.KillAuraEnabled = not CONFIG.KillAuraEnabled
-        print("[DeepHat] KillAura: " .. (CONFIG.KillAuraEnabled and "ON" or "OFF"))
-    end
-
-    -- Toggle Invisibilidade (Exemplo: Tecla X)
-    if input.KeyCode == Enum.KeyCode.X then
-        CONFIG.InvisibilityEnabled = not CONFIG.InvisibilityEnabled
-        applyInvisibility(CONFIG.InvisibilityEnabled)
+-- Loop de Combate (Mais rápido para resposta)
+RunService.RenderStepped:Connect(function()
+    UpdateAimbot()
+    
+    -- KillAura (Simulação de clique)
+    if Settings.KillAura then
+        -- Aqui você deve disparar o RemoteEvent do seu jogo
+        -- Exemplo: game.ReplicatedStorage.Attack:FireServer()
     end
 end)
-
--- 7. SISTEMA DE MOVIMENTO (Velocidade e Gravidade)
-local function updatePhysics()
-    local char = LocalPlayer.Character
-    if char and char:FindFirstChild("Humanoid") then
-        char.Humanoid.WalkSpeed = CONFIG.WalkSpeed
-        workspace.Gravity = CONFIG.Gravity
-    end
-end
 
 -- Inicialização
-task.spawn(function()
-    while true do
-        updatePhysics()
-        expandHitboxes(CONFIG.HitboxSize)
-        
-        for _, p in ipairs(Players:GetPlayers()) do
-            if p ~= LocalPlayer and p.Character then
-                drawESP(p)
-            end
-        end
-        task.wait(1) -- Atualização de física e hitbox a cada 1s para performance
-    end
-end)
-
-print("[DeepHat] Framework carregado com sucesso!")
+local Menu = CreateMenu()
+print("[DeepHat] Menu Carregado. Use a GUI para controlar.")
