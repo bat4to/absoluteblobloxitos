@@ -1,6 +1,6 @@
 --[[
-    DeepHat - Flight Script Engine (V2 - UI Optimized)
-    Correção: Adicionado Botão de Toggle na Interface e Melhoria de Estabilidade
+    DeepHat - Flight Script Engine (V3 - Ultimate Stability)
+    Foco: Botão Azul de Toggle, Controle de Velocidade e Modo PlatformStand
 ]]
 
 local UserInputService = game:GetService("UserInputService")
@@ -8,14 +8,14 @@ local RunService = game:GetService("RunService")
 local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
 
--- Configurações
+-- Configurações de Estado
 local Flying = false
 local Speed = 50
 local SpeedIncrement = 5
 
--- Variáveis de Controle
-local BodyVelocity, BodyGyro, Camera
-local Character, RootPart
+-- Variáveis de Física
+local BV, BG, Camera
+local Character, RootPart, Humanoid
 
 -- Criando a Interface (UI)
 local ScreenGui = Instance.new("ScreenGui")
@@ -24,23 +24,23 @@ local Title = Instance.new("TextLabel")
 local SpeedLabel = Instance.new("TextLabel")
 local SpeedUp = Instance.new("TextButton")
 local SpeedDown = Instance.new("TextButton")
-local ToggleButton = Instance.new("TextButton") -- Novo Botão de Ativação
+local ToggleButton = Instance.new("TextButton") -- Botão Azul
 
-ScreenGui.Name = "DeepHat_FlyMenu_V2"
+ScreenGui.Name = "DeepHat_Fly_V3"
 ScreenGui.Parent = game:GetService("CoreGui") 
 ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 
 MainFrame.Name = "MainFrame"
 MainFrame.Parent = ScreenGui
-MainFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+MainFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
 MainFrame.BorderSizePixel = 0
-MainFrame.Position = UDim2.new(0.5, -75, 0, 40) -- Centralizado no topo
-MainFrame.Size = UDim2.new(0, 150, 0, 160) -- Aumentado para caber o novo botão
+MainFrame.Position = UDim2.new(0.5, -75, 0, 50) 
+MainFrame.Size = UDim2.new(0, 150, 0, 170)
 
 Title.Name = "Title"
 Title.Parent = MainFrame
-Title.Text = "DEEP HAT FLY"
-Title.TextColor3 = Color3.fromRGB(255, 50, 50) -- Vermelho Cyber
+Title.Text = "FLY CONTROL"
+Title.TextColor3 = Color3.fromRGB(0, 200, 255) -- Azul Cyan
 Title.TextSize = 16
 Title.Font = Enum.Font.SourceSansBold
 Title.Size = UDim2.new(1, 0, 0, 30)
@@ -58,7 +58,7 @@ SpeedUp.Name = "SpeedUp"
 SpeedUp.Parent = MainFrame
 SpeedUp.Text = "+"
 SpeedUp.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
-SpeedUp.TextColor3 = Color3.fromRGB(0, 255, 0)
+SpeedUp.TextColor3 = Color3.fromRGB(255, 255, 255)
 SpeedUp.Size = UDim2.new(0, 40, 0, 30)
 SpeedUp.Position = UDim2.new(0.2, 0, 0, 60)
 
@@ -66,63 +66,71 @@ SpeedDown.Name = "SpeedDown"
 SpeedDown.Parent = MainFrame
 SpeedDown.Text = "-"
 SpeedDown.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
-SpeedDown.TextColor3 = Color3.fromRGB(255, 0, 0)
+SpeedDown.TextColor3 = Color3.fromRGB(255, 255, 255)
 SpeedDown.Size = UDim2.new(0, 40, 0, 30)
 SpeedDown.Position = UDim2.new(0.6, 0, 0, 60)
 
 ToggleButton.Name = "ToggleButton"
 ToggleButton.Parent = MainFrame
-ToggleButton.Text = "FLY: OFF"
-ToggleButton.BackgroundColor3 = Color3.fromRGB(60, 0, 0)
+ToggleButton.Text = "ACTIVATE"
+ToggleButton.BackgroundColor3 = Color3.fromRGB(0, 150, 255) -- Azul Vibrante
 ToggleButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-ToggleButton.Size = UDim2.new(0, 120, 0, 35)
-ToggleButton.Position = UDim2.new(0.5, -60, 0, 100)
+ToggleButton.Size = UDim2.new(0, 120, 0, 40)
+ToggleButton.Position = UDim2.new(0.5, -60, 0, 110)
 ToggleButton.Font = Enum.Font.SourceSansBold
-ToggleButton.TextSize = 14
+ToggleButton.TextSize = 16
 
--- Lógica de Voo
+-- Função para desativar o voo e resetar física
 local function StopFlying()
     Flying = false
-    ToggleButton.Text = "FLY: OFF"
-    ToggleButton.BackgroundColor3 = Color3.fromRGB(60, 0, 0)
+    ToggleButton.Text = "ACTIVATE"
+    ToggleButton.BackgroundColor3 = Color3.fromRGB(0, 150, 255)
     
-    if BodyVelocity then BodyVelocity:Destroy() end
-    if BodyGyro then BodyGyro:Destroy() end
+    if Humanoid then
+        Humanoid.PlatformStand = false -- Devolve o controle ao jogador
+    end
+    
+    if BV then BV:Destroy() end
+    if BG then BG:Destroy() end
 end
 
+-- Função para ativar o voo
 local function StartFlying()
     Character = LocalPlayer.Character
-    if not Character or not Character:FindFirstChild("HumanoidRootPart") then return end
-    
-    RootPart = Character.HumanoidRootPart
+    if not Character then return end
+    RootPart = Character:FindFirstChild("HumanoidRootPart")
+    Humanoid = Character:FindFirstChildOfClass("Humanoid")
     Camera = workspace.CurrentCamera
 
-    -- Limpar instâncias antigas para evitar bugs
-    if BodyVelocity then BodyVelocity:Destroy() end
-    if BodyGyro then BodyGyro:Destroy() end
+    if not RootPart or not Humanoid then return end
 
-    BodyVelocity = Instance.new("BodyVelocity")
-    BodyVelocity.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
-    BodyVelocity.Velocity = Vector3.new(0, 0, 0)
-    BodyVelocity.Parent = RootPart
+    -- Configura o estado do personagem para não lutar contra a física
+    Humanoid.PlatformStand = true 
 
-    BodyGyro = Instance.new("BodyGyro")
-    BodyGyro.MaxTorque = Vector3.new(math.huge, math.huge, math.huge)
-    BodyGyro.P = 3000
-    BodyGyro.CFrame = RootPart.CFrame
-    BodyGyro.Parent = RootPart
+    -- Criação das forças de movimento
+    BV = Instance.new("BodyVelocity")
+    BV.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+    BV.Velocity = Vector3.new(0, 0, 0)
+    BV.Parent = RootPart
+
+    BG = Instance.new("BodyGyro")
+    BG.MaxTorque = Vector3.new(math.huge, math.huge, math.huge)
+    BG.P = 3000
+    BG.CFrame = RootPart.CFrame
+    BG.Parent = RootPart
 
     Flying = true
-    ToggleButton.Text = "FLY: ON"
-    ToggleButton.BackgroundColor3 = Color3.fromRGB(0, 100, 0)
+    ToggleButton.Text = "DEACTIVATE"
+    ToggleButton.BackgroundColor3 = Color3.fromRGB(255, 100, 0) -- Laranja ao ativar
 
-    -- Loop de Movimento
+    -- Loop de Movimento Principal
     task.spawn(function()
-        while Flying do
-            local dt = RunService.RenderStepped:Wait()
+        while Flying and Character and RootPart do
+            RunService.RenderStepped:Wait()
             
             local Direction = Vector3.new(0, 0, 0)
             
+            -- Controles de Teclado
             if UserInputService:IsKeyDown(Enum.KeyCode.W) then
                 Direction = Direction + Camera.CFrame.LookVector
             end
@@ -142,14 +150,17 @@ local function StartFlying()
                 Direction = Direction - Vector3.new(0, 1, 0)
             end
 
-            -- Aplica a velocidade baseada no input e na câmera
-            BodyVelocity.Velocity = Direction * Speed
-            BodyGyro.CFrame = Camera.CFrame
+            -- Aplicação da Velocidade
+            BV.Velocity = Direction * Speed
+            BG.CFrame = Camera.CFrame -- Mantém o corpo alinhado com a câmera
         end
+        
+        -- Limpeza final se o loop quebrar
+        StopFlying()
     end)
 end
 
--- Eventos de Botão
+-- Eventos de Clique
 ToggleButton.MouseButton1Click:Connect(function()
     if Flying then
         StopFlying()
@@ -168,9 +179,10 @@ SpeedDown.MouseButton1Click:Connect(function()
     SpeedLabel.Text = "Speed: " .. Speed
 end)
 
--- Prevenção de erro se o personagem morrer
+-- Resetar se morrer
 LocalPlayer.CharacterAdded:Connect(function()
+    task.wait(1)
     StopFlying()
 end)
 
-print("DeepHat Fly V2 Loaded. Use the UI to fly.")
+print("DeepHat V3 Engine Ready. Use the Blue Button.")
