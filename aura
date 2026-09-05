@@ -1,5 +1,5 @@
--- DeepHat Advanced Combat Framework v2 (GUI Edition)
--- Focado em Estabilidade e Performance
+-- DeepHat Ultimate Combat Framework v3 (Advanced Edition)
+-- Módulos: Aimbot Pro, KillAura, Teleport, Movement, Stealth
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -7,46 +7,44 @@ local UserInputService = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
 
 local LocalPlayer = Players.LocalPlayer
-local Mouse = LocalPlayer:GetMouse()
 local Camera = workspace.CurrentCamera
+local Mouse = LocalPlayer:GetMouse()
 
--- Tabela de Configurações (Estado do Hack)
+-- CONFIGURAÇÕES
 local Settings = {
     Aimbot = false,
+    AimbotSmoothness = 0.1, -- Menor = mais suave/lento
     KillAura = false,
-    ESP = false,
-    Hitbox = false,
+    KillAuraRange = 18,
     Invisibility = false,
+    JumpPower = 50,
     WalkSpeed = 16,
-    Gravity = 196.2,
-    AimbotSmoothness = 0.15,
-    HitboxSize = 12,
-    KillAuraRange = 15
+    TeleportTarget = "",
+    TeleportEnabled = false
 }
 
--- 1. CRIAÇÃO DA INTERFACE (GUI) NO CANTO INFERIOR DIREITO
+-- 1. INTERFACE GUI (MENU)
 local function CreateMenu()
     local ScreenGui = Instance.new("ScreenGui")
-    ScreenGui.Name = "DeepHat_Menu"
-    ScreenGui.Parent = game:GetService("CoreGui") -- Usa CoreGui para não sumir ao morrer
+    ScreenGui.Name = "DeepHat_Pro_Menu"
+    ScreenGui.Parent = game:GetService("CoreGui")
 
     local MainFrame = Instance.new("Frame")
-    MainFrame.Name = "MainFrame"
-    MainFrame.Size = UDim2.new(0, 180, 0, 250)
-    MainFrame.Position = UDim2.new(1, -190, 1, -260) -- Canto inferior direito
-    MainFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+    MainFrame.Size = UDim2.new(0, 200, 0, 300)
+    MainFrame.Position = UDim2.new(1, -210, 1, -310)
+    MainFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
     MainFrame.BorderSizePixel = 0
     MainFrame.Active = true
-    MainFrame.Draggable = true -- Permite mover o menu
+    MainFrame.Draggable = true
     MainFrame.Parent = ScreenGui
 
     local Title = Instance.new("TextLabel")
     Title.Size = UDim2.new(1, 0, 0, 30)
-    Title.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
-    Title.Text = "DEEPHAT MENU"
-    Title.TextColor3 = Color3.new(1, 1, 1)
-    Title.TextSize = 14
+    Title.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+    Title.Text = "DEEPHAT PRO"
+    Title.TextColor3 = Color3.new(1, 0.8, 0)
     Title.Font = Enum.Font.GothamBold
+    Title.TextSize = 14
     Title.Parent = MainFrame
 
     local Container = Instance.new("ScrollingFrame")
@@ -60,11 +58,11 @@ local function CreateMenu()
     UIListLayout.Parent = Container
     UIListLayout.Padding = UDim.new(0, 5)
 
-    -- Função para criar botões de Toggle
+    -- Funções de Toggle
     local function CreateToggle(name, callback)
         local Button = Instance.new("TextButton")
         Button.Size = UDim2.new(1, -5, 0, 30)
-        Button.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
+        Button.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
         Button.Text = name .. ": OFF"
         Button.TextColor3 = Color3.new(0.8, 0.8, 0.8)
         Button.Font = Enum.Font.Gotham
@@ -80,111 +78,153 @@ local function CreateMenu()
         end)
     end
 
-    -- Criando as opções no menu
-    CreateToggle("Aimbot (R)", function(v) Settings.Aimbot = v end)
+    -- Botões de Combate
+    CreateToggle("Aimbot (Smooth)", function(v) Settings.Aimbot = v end)
     CreateToggle("KillAura (LMB)", function(v) Settings.KillAura = v end)
-    CreateToggle("ESP", function(v) Settings.ESP = v end)
-    CreateToggle("Hitbox Expander", function(v) Settings.Hitbox = v end)
     CreateToggle("Invisibility", function(v) Settings.Invisibility = v end)
     
-    -- Input para Velocidade e Gravidade (Simples)
-    local SpeedInput = Instance.new("TextBox")
-    SpeedInput.Size = UDim2.new(1, -5, 0, 30)
-    SpeedInput.PlaceholderText = "WalkSpeed (Ex: 25)"
-    SpeedInput.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
-    SpeedInput.TextColor3 = Color3.new(1, 1, 1)
-    SpeedInput.Text = "WalkSpeed"
-    SpeedInput.Parent = Container
-    SpeedInput.FocusLost:Connect(function()
-        local val = tonumber(SpeedInput.Text)
-        if val then Settings.WalkSpeed = val end
+    -- Inputs de Movimento
+    local SpeedBox = Instance.new("TextBox")
+    SpeedBox.Size = UDim2.new(1, -5, 0, 30)
+    SpeedBox.PlaceholderText = "WalkSpeed"
+    SpeedBox.Text = ""
+    SpeedBox.Parent = Container
+    SpeedBox.FocusLost:Connect(function() Settings.WalkSpeed = tonumber(SpeedBox.Text) or 16 end)
+
+    local JumpBox = Instance.new("TextBox")
+    JumpBox.Size = UDim2.new(1, -5, 0, 30)
+    JumpBox.PlaceholderText = "JumpPower"
+    JumpBox.Text = ""
+    JumpBox.Parent = Container
+    JumpBox.FocusLost:Connect(function() Settings.JumpPower = tonumber(JumpBox.Text) or 50 end)
+
+    -- Teleport System
+    local TPBox = Instance.new("TextBox")
+    TPBox.Size = UDim2.new(1, -5, 0, 30)
+    TPBox.PlaceholderText = "Target Nickname"
+    TPBox.Text = ""
+    TPBox.Parent = Container
+    TPBox.FocusLost:Connect(function() Settings.TeleportTarget = TPBox.Text end)
+
+    local TPBtn = Instance.new("TextButton")
+    TPBtn.Size = UDim2.new(1, -5, 0, 30)
+    TPBtn.BackgroundColor3 = Color3.fromRGB(150, 50, 50)
+    TPBtn.Text = "Teleport to Player"
+    TPBtn.TextColor3 = Color3.new(1, 1, 1)
+    TPBtn.Parent = Container
+    TPBtn.MouseButton1Click:Connect(function()
+        Settings.TeleportEnabled = true
+        task.wait(0.5)
+        Settings.TeleportEnabled = false
     end)
 
     return ScreenGui
 end
 
--- 2. LÓGICA DE COMBATE E SISTEMAS (OTIMIZADA)
+-- 2. LÓGICA AVANÇADA
 
--- Aimbot com interpolação suave
+-- Aimbot Melhorado (Usa interpolação de CFrame para evitar snap)
 local function UpdateAimbot()
     if not Settings.Aimbot then return end
     
     local target = nil
-    local dist = math.huge
+    local minDistance = math.huge
 
     for _, p in ipairs(Players:GetPlayers()) do
         if p ~= LocalPlayer and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
             local pos, onScreen = Camera:WorldToViewportPoint(p.Character.HumanoidRootPart.Position)
             if onScreen then
                 local mousePos = Vector2.new(Mouse.X, Mouse.Y)
-                local screenDist = (Vector2.new(pos.X, pos.Y) - mousePos).Magnitude
-                if screenDist < dist then
+                local dist = (Vector2.new(pos.X, pos.Y) - mousePos).Magnitude
+                if dist < minDistance then
                     target = p
-                    dist = screenDist
+                    minDistance = dist
                 end
             end
         end
     end
 
     if target and target.Character then
-        local hrp = target.Character.HumanoidRootPart
-        Camera.CFrame = Camera.CFrame:Lerp(CFrame.new(Camera.CFrame.Position, hrp.Position), Settings.AimbotSmoothness)
+        local targetHRP = target.Character.HumanoidRootPart
+        -- Suavização usando Lerp para simular movimento de mão humana
+        Camera.CFrame = Camera.CFrame:Lerp(CFrame.new(Camera.CFrame.Position, targetHRP.Position), Settings.AimbotSmoothness)
     end
 end
 
--- Hitbox Expander (Apenas quando ativado)
-local function UpdateHitboxes()
+-- KillAura (Simulação de Combate)
+local function UpdateKillAura()
+    if not Settings.KillAura then return end
+    
     for _, p in ipairs(Players:GetPlayers()) do
-        if p ~= LocalPlayer and p.Character then
-            local head = p.Character:FindFirstChild("Head")
-            if head then
-                if Settings.Hitbox then
-                    head.Size = Vector3.new(Settings.HitboxSize, Settings.HitboxSize, Settings.HitboxSize)
-                    head.Transparency = 0.7
-                    head.CanCollide = false
-                else
-                    head.Size = Vector3.new(1, 1, 1) -- Tamanho padrão
-                    head.Transparency = 0
-                end
+        if p ~= LocalPlayer and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
+            local dist = (LocalPlayer.Character.HumanoidRootPart.Position - p.Character.HumanoidRootPart.Position).Magnitude
+            if dist <= Settings.KillAuraRange then
+                -- Aqui você deve inserir o disparo do RemoteEvent de ataque do jogo
+                -- Exemplo: game.ReplicatedStorage.Combat:FireServer("Attack", p.Character)
             end
         end
     end
 end
 
--- 3. LOOP PRINCIPAL (CONTROLE DE PERFORMANCE)
-task.spawn(function()
-    while task.wait(0.1) do -- Não roda em cada frame para evitar lag
-        -- Física
-        if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then
-            LocalPlayer.Character.Humanoid.WalkSpeed = Settings.WalkSpeed
-            workspace.Gravity = Settings.Gravity
+-- Teleport System
+local function HandleTeleport()
+    if not Settings.TeleportEnabled or Settings.TeleportTarget == "" then return end
+    
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p.Name:lower():find(Settings.TeleportTarget:lower()) and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
+            local targetPos = p.Character.HumanoidRootPart.Position
+            local myChar = LocalPlayer.Character
+            
+            if myChar and myChar:FindFirstChild("HumanoidRootPart") then
+                -- Teleport suave usando Tween para evitar detecção de movimento instantâneo
+                local tween = TweenService:Create(myChar.HumanoidRootPart, TweenInfo.new(0.5, Enum.EasingStyle.Quad), {CFrame = CFrame.new(targetPos + Vector3.new(0, 5, 0))})
+                tween:Play()
+                print("[DeepHat] Teleportado para: " .. p.Name)
+            end
+            break
         end
+    end
+    Settings.TeleportEnabled = false
+end
 
-        -- Hitbox e ESP
-        UpdateHitboxes()
-        
-        -- Invisibilidade (Simples)
-        if LocalPlayer.Character then
-            for _, part in ipairs(LocalPlayer.Character:GetDescendants()) do
-                if part:IsA("BasePart") then
-                    part.Transparency = Settings.Invisibility and 1 or 0
-                end
+-- 3. LOOP DE EXECUÇÃO (Otimizado)
+
+-- Loop de Física e Movimento (Baixa frequência)
+task.spawn(function()
+    while true do
+        local char = LocalPlayer.Character
+        if char then
+            local hum = char:FindFirstChild("Humanoid")
+            if hum then
+                hum.WalkSpeed = Settings.WalkSpeed
+                hum.JumpPower = Settings.JumpPower
             end
         end
+        task.wait(0.5)
     end
 end)
 
--- Loop de Combate (Mais rápido para resposta)
+-- Loop de Combate (Alta frequência)
 RunService.RenderStepped:Connect(function()
     UpdateAimbot()
+    UpdateKillAura()
+    HandleTeleport()
     
-    -- KillAura (Simulação de clique)
-    if Settings.KillAura then
-        -- Aqui você deve disparar o RemoteEvent do seu jogo
-        -- Exemplo: game.ReplicatedStorage.Attack:FireServer()
+    -- Invisibilidade (Melhorada para partes locais)
+    if Settings.Invisibility and LocalPlayer.Character then
+        for _, part in ipairs(LocalPlayer.Character:GetDescendants()) do
+            if part:IsA("BasePart") then
+                part.Transparency = 1
+            elseif part:IsA("Decal") then
+                part.Transparency = 1
+            end
+        end
     end
 end)
 
+-- Inicialização
+local Menu = CreateMenu()
+print("[DeepHat] Framework v3 Ativado. Use o Menu para configurar.")
 -- Inicialização
 local Menu = CreateMenu()
 print("[DeepHat] Menu Carregado. Use a GUI para controlar.")
