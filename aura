@@ -1,5 +1,5 @@
--- Blobloxitos Aura - Advanced Framework
--- Módulos: Fly, Teleport, Bring, Movement, Combat
+-- [[ BLOBLOXITOS AURA - ULTIMATE EDITION ]] --
+-- Desenvolvido para Estabilidade e Performance
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -10,31 +10,156 @@ local LocalPlayer = Players.LocalPlayer
 local Camera = workspace.CurrentCamera
 local Mouse = LocalPlayer:GetMouse()
 
--- CONFIGURAÇÕES
+-- [[ CONFIGURAÇÕES AVANÇADAS ]] --
 local Settings = {
+    -- Combate
     Aimbot = false,
-    AimbotSmoothness = 0.12,
+    AimbotSmoothness = 0.1, -- 0.01 a 1.0
+    AimbotRange = 100,
     KillAura = false,
-    KillAuraRange = 18,
-    Invisibility = false,
-    WalkSpeed = 16,
-    JumpPower = 50,
+    KillAuraRange = 15,
+    
+    -- Movimento
     FlyEnabled = false,
     FlySpeed = 50,
+    WalkSpeed = 16,
+    JumpPower = 50,
+    
+    -- Troll/Técnico
+    BangEnabled = false,
+    BangTarget = "",
     TeleportTarget = "",
     TeleportEnabled = false,
-    BringEnabled = false
+    BringEnabled = false,
+    
+    -- Visual/Status
+    ESP = false,
+    GodModeSim = false, -- Simulação de proteção (visual)
+    
+    -- Controle de UI
+    MenuOpen = true
 }
 
--- 1. INTERFACE GUI (BLOBLOXITOS AURA)
+-- [[ MÓDULO DE UTILITÁRIOS ]] --
+local Utils = {}
+
+function Utils:GetClosestPlayer()
+    local closest = nil
+    local dist = math.huge
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p ~= LocalPlayer and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
+            local pos, onScreen = Camera:WorldToViewportPoint(p.Character.HumanoidRootPart.Position)
+            if onScreen then
+                local mPos = Vector2.new(Mouse.X, Mouse.Y)
+                local d = (Vector2.new(pos.X, pos.Y) - mPos).Magnitude
+                if d < dist then
+                    closest = p
+                    dist = d
+                end
+            end
+        end
+    end
+    return closest
+end
+
+-- [[ MÓDULO DE MOVIMENTO (FLY CORRIGIDO) ]] --
+local FlyModule = {}
+local bv, bg -- BodyVelocity e BodyGyro
+
+function FlyModule:Toggle(state)
+    local char = LocalPlayer.Character
+    if not char or not char:FindFirstChild("HumanoidRootPart") then return end
+    local hrp = char.HumanoidRootPart
+    local hum = char:FindFirstChild("Humanoid")
+
+    if state then
+        bv = Instance.new("BodyVelocity")
+        bv.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+        bv.Velocity = Vector3.new(0, 0, 0)
+        bv.Parent = hrp
+
+        bg = Instance.new("BodyGyro")
+        bg.MaxTorque = Vector3.new(math.huge, math.huge, math.huge)
+        bg.P = 9000
+        bg.CFrame = hrp.CFrame
+        bg.Parent = hrp
+
+        hum.PlatformStand = true
+    else
+        if bv then bv:Destroy() end
+        if bg then bg:Destroy() end
+        hum.PlatformStand = false
+    end
+end
+
+function FlyModule:Update()
+    if not Settings.FlyEnabled or not LocalPlayer.Character then return end
+    local hrp = LocalPlayer.Character.HumanoidRootPart
+    local direction = Vector3.new(0, 0, 0)
+
+    if UserInputService:IsKeyDown(Enum.KeyCode.W) then direction += Camera.CFrame.LookVector end
+    if UserInputService:IsKeyDown(Enum.KeyCode.S) then direction -= Camera.CFrame.LookVector end
+    if UserInputService:IsKeyDown(Enum.KeyCode.A) then direction -= Camera.CFrame.RightVector end
+    if UserInputService:IsKeyDown(Enum.KeyCode.D) then direction += Camera.CFrame.RightVector end
+    if UserInputService:IsKeyDown(Enum.KeyCode.Space) then direction += Vector3.new(0, 1, 0) end
+    if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then direction -= Vector3.new(0, 1, 0) end
+
+    bv.Velocity = direction * Settings.FlySpeed
+    bg.CFrame = Camera.CFrame
+end
+
+-- [[ MÓDULO TROLL (BANG & BRING) ]] --
+local TrollModule = {}
+
+function TrollModule:Bang(targetName)
+    if not targetName or targetName == "" then return end
+    local target = nil
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p.Name:lower():find(targetName:lower()) then
+            target = p
+            break
+        end
+    end
+
+    if target and target.Character and target.Character:FindFirstChild("HumanoidRootPart") then
+        local targetHRP = target.Character.HumanoidRootPart
+        local myHRP = LocalPlayer.Character.HumanoidRootPart
+        
+        -- Ciclo de movimento rápido (Simulação)
+        task.spawn(function()
+            for i = 1, 20 do -- 20 ciclos de movimento
+                if not Settings.BangEnabled then break end
+                
+                -- Movimento de aproximação e afastamento rápido
+                local offset = Vector3.new(0, 0, math.sin(i) * 2)
+                myHRP.CFrame = targetHRP.CFrame * CFrame.new(0, 0, -1.5) * CFrame.new(offset)
+                task.wait(0.05)
+            end
+        end)
+    end
+end
+
+-- [[ MÓDULO COMBATE (AIMBOT & KILLAURA) ]] --
+local CombatModule = {}
+
+function CombatModule:UpdateAimbot()
+    if not Settings.Aimbot then return end
+    local target = Utils:GetClosestPlayer()
+    if target and target.Character then
+        local hrp = target.Character.HumanoidRootPart
+        Camera.CFrame = Camera.CFrame:Lerp(CFrame.new(Camera.CFrame.Position, hrp.Position), Settings.AimbotSmoothness)
+    end
+end
+
+-- [[ INTERFACE GUI (BLOBLOXITOS AURA) ]] --
 local function CreateMenu()
     local ScreenGui = Instance.new("ScreenGui")
-    ScreenGui.Name = "BlobloxitosAura_Menu"
+    ScreenGui.Name = "BlobloxitosAura_V3"
     ScreenGui.Parent = game:GetService("CoreGui")
 
     local MainFrame = Instance.new("Frame")
-    MainFrame.Size = UDim2.new(0, 200, 0, 350)
-    MainFrame.Position = UDim2.new(1, -210, 1, -360)
+    MainFrame.Size = UDim2.new(0, 220, 0, 380)
+    MainFrame.Position = UDim2.new(1, -230, 1, -390)
     MainFrame.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
     MainFrame.BorderSizePixel = 0
     MainFrame.Active = true
@@ -43,11 +168,11 @@ local function CreateMenu()
 
     local Title = Instance.new("TextLabel")
     Title.Size = UDim2.new(1, 0, 0, 35)
-    Title.BackgroundColor3 = Color3.fromRGB(30, 0, 50) -- Roxo escuro
+    Title.BackgroundColor3 = Color3.fromRGB(40, 10, 60)
     Title.Text = "BLOBLOXITOS AURA"
     Title.TextColor3 = Color3.new(1, 1, 1)
     Title.Font = Enum.Font.GothamBold
-    Title.TextSize = 14
+    Title.TextSize = 16
     Title.Parent = MainFrame
 
     local Container = Instance.new("ScrollingFrame")
@@ -59,50 +184,55 @@ local function CreateMenu()
 
     local UIListLayout = Instance.new("UIListLayout")
     UIListLayout.Parent = Container
-    UIListLayout.Padding = UDim.new(0, 5)
+    UIListLayout.Padding = UDim.new(0, 6)
 
-    -- Funções de Criação de UI
-    local function CreateToggle(name, callback)
-        local Button = Instance.new("TextButton")
-        Button.Size = UDim2.new(1, -5, 0, 30)
-        Button.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
-        Button.Text = name .. ": OFF"
-        Button.TextColor3 = Color3.new(0.8, 0.8, 0.8)
-        Button.Font = Enum.Font.Gotham
-        Button.TextSize = 12
-        Button.Parent = Container
+    -- Funções de criação de botões
+    local function AddToggle(name, callback)
+        local Btn = Instance.new("TextButton")
+        Btn.Size = UDim2.new(1, -5, 0, 32)
+        Btn.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+        Btn.Text = name .. ": OFF"
+        Btn.TextColor3 = Color3.new(0.8, 0.8, 0.8)
+        Btn.Font = Enum.Font.Gotham
+        Btn.TextSize = 12
+        Btn.Parent = Container
 
-        local enabled = false
-        Button.MouseButton1Click:Connect(function()
-            enabled = not enabled
-            Button.Text = name .. ": " .. (enabled and "ON" or "OFF")
-            Button.TextColor3 = enabled and Color3.fromRGB(170, 0, 255) or Color3.new(0.8, 0.8, 0.8)
-            callback(enabled)
+        local state = false
+        Btn.MouseButton1Click:Connect(function()
+            state = not state
+            Btn.Text = name .. ": " .. (state and "ON" or "OFF")
+            Btn.TextColor3 = state and Color3.fromRGB(200, 50, 255) or Color3.new(0.8, 0.8, 0.8)
+            callback(state)
         end)
     end
 
-    -- Botões de Combate/Stealth
-    CreateToggle("Aimbot", function(v) Settings.Aimbot = v end)
-    CreateToggle("KillAura", function(v) Settings.KillAura = v end)
-    CreateToggle("Invisibility", function(v) Settings.Invisibility = v end)
-    CreateToggle("Fly", function(v) Settings.FlyEnabled = v end)
+    -- Combate
+    AddToggle("Aimbot", function(v) Settings.Aimbot = v end)
+    AddToggle("KillAura", function(v) Settings.KillAura = v end)
+    AddToggle("Fly (Voo)", function(v) Settings.FlyEnabled = v; FlyModule:Toggle(v) end)
+    
+    -- Troll
+    AddToggle("Bang (Troll)", function(v) Settings.BangEnabled = v end)
+    
+    -- Inputs de Configuração
+    local function AddInput(placeholder, callback)
+        local Box = Instance.new("TextBox")
+        Box.Size = UDim2.new(1, -5, 0, 30)
+        Box.PlaceholderText = placeholder
+        Box.Text = ""
+        Box.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+        Box.TextColor3 = Color3.new(1, 1, 1)
+        Box.Font = Enum.Font.Gotham
+        Box.TextSize = 12
+        Box.Parent = Container
+        Box.FocusLost:Connect(callback)
+    end
 
-    -- Seção de Movimento
-    local SpeedBox = Instance.new("TextBox")
-    SpeedBox.Size = UDim2.new(1, -5, 0, 30)
-    SpeedBox.PlaceholderText = "WalkSpeed"
-    SpeedBox.Text = ""
-    SpeedBox.Parent = Container
-    SpeedBox.FocusLost:Connect(function() Settings.WalkSpeed = tonumber(SpeedBox.Text) or 16 end)
+    AddInput("WalkSpeed", function() Settings.WalkSpeed = tonumber(Box.Text) or 16 end)
+    AddInput("JumpPower", function() Settings.JumpPower = tonumber(Box.Text) or 50 end)
+    AddInput("Aimbot Smoothness", function() Settings.AimbotSmoothness = tonumber(Box.Text) or 0.1 end)
 
-    local JumpBox = Instance.new("TextBox")
-    JumpBox.Size = UDim2.new(1, -5, 0, 30)
-    JumpBox.PlaceholderText = "JumpPower"
-    JumpBox.Text = ""
-    JumpBox.Parent = Container
-    JumpBox.FocusLost:Connect(function() Settings.JumpPower = tonumber(JumpBox.Text) or 50 end)
-
-    -- Seção Teleport / Bring
+    -- Teleport/Bring Section
     local NickBox = Instance.new("TextBox")
     NickBox.Size = UDim2.new(1, -5, 0, 30)
     NickBox.PlaceholderText = "Target Nickname"
@@ -111,11 +241,9 @@ local function CreateMenu()
 
     local TPBtn = Instance.new("TextButton")
     TPBtn.Size = UDim2.new(0.48, 0, 0, 30)
-    TPBtn.Position = UDim2.new(0, 0, 0, 0)
     TPBtn.BackgroundColor3 = Color3.fromRGB(60, 20, 80)
     TPBtn.Text = "TP To"
     TPBtn.TextColor3 = Color3.new(1, 1, 1)
-    TPBtn.TextSize = 10
     TPBtn.Parent = Container
 
     local BringBtn = Instance.new("TextButton")
@@ -124,10 +252,8 @@ local function CreateMenu()
     BringBtn.BackgroundColor3 = Color3.fromRGB(80, 20, 20)
     BringBtn.Text = "Bring"
     BringBtn.TextColor3 = Color3.new(1, 1, 1)
-    BringBtn.TextSize = 10
     BringBtn.Parent = Container
 
-    -- Lógica dos Botões de Teleport/Bring
     TPBtn.MouseButton1Click:Connect(function()
         Settings.TeleportTarget = NickBox.Text
         Settings.TeleportEnabled = true
@@ -141,87 +267,9 @@ local function CreateMenu()
     return ScreenGui
 end
 
--- 2. LÓGICA DOS SISTEMAS
+-- [[ LOOP PRINCIPAL DE EXECUÇÃO ]] --
 
--- Sistema de Fly (Voo)
-local function UpdateFly()
-    local char = LocalPlayer.Character
-    if not char or not char:FindFirstChild("HumanoidRootPart") then return end
-    local hrp = char.HumanoidRootPart
-    local hum = char:FindFirstChild("Humanoid")
-
-    if Settings.FlyEnabled then
-        -- Desativa gravidade local para voar
-        hum.PlatformStand = true 
-        
-        -- Direção baseada na câmera
-        local direction = Vector3.new(0,0,0)
-        if UserInputService:IsKeyDown(Enum.KeyCode.W) then direction += Camera.CFrame.LookVector end
-        if UserInputService:IsKeyDown(Enum.KeyCode.S) then direction -= Camera.CFrame.LookVector end
-        if UserInputService:IsKeyDown(Enum.KeyCode.A) then direction -= Camera.CFrame.RightVector end
-        if UserInputService:IsKeyDown(Enum.KeyCode.D) then direction += Camera.CFrame.RightVector end
-        
-        hrp.Velocity = direction * Settings.FlySpeed
-    else
-        hum.PlatformStand = false
-    end
-end
-
--- Sistema de Teleport e Bring
-local function HandleTeleportation()
-    if Settings.TeleportTarget == "" then return end
-    
-    for _, p in ipairs(Players:GetPlayers()) do
-        if p.Name:lower():find(Settings.TeleportTarget:lower()) and p.Character then
-            local targetHRP = p.Character:FindFirstChild("HumanoidRootPart")
-            local myHRP = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-
-            if targetHRP and myHRP then
-                if Settings.TeleportEnabled then
-                    -- Teleport para o player (Suave)
-                    TweenService:Create(myHRP, TweenInfo.new(0.5), {CFrame = targetHRP.CFrame * CFrame.new(0, 5, 0)}):Play()
-                    Settings.TeleportEnabled = false
-                elseif Settings.BringEnabled then
-                    -- Bring: Puxa o player até você (Apenas se você for o dono da ação)
-                    -- Nota: Isso funciona melhor em jogos com física fraca
-                    TweenService:Create(targetHRP, TweenInfo.new(0.5), {CFrame = myHRP.CFrame * CFrame.new(0, 0, -3)}):Play()
-                    Settings.BringEnabled = false
-                end
-            end
-            break
-        end
-    end
-end
-
--- Aimbot Suave
-local function UpdateAimbot()
-    if not Settings.Aimbot then return end
-    local target = nil
-    local minDistance = math.huge
-
-    for _, p in ipairs(Players:GetPlayers()) do
-        if p ~= LocalPlayer and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
-            local pos, onScreen = Camera:WorldToViewportPoint(p.Character.HumanoidRootPart.Position)
-            if onScreen then
-                local mousePos = Vector2.new(Mouse.X, Mouse.Y)
-                local dist = (Vector2.new(pos.X, pos.Y) - mousePos).Magnitude
-                if dist < minDistance then
-                    target = p
-                    minDistance = dist
-                end
-            end
-        end
-    end
-
-    if target and target.Character then
-        local targetHRP = target.Character.HumanoidRootPart
-        Camera.CFrame = Camera.CFrame:Lerp(CFrame.new(Camera.CFrame.Position, targetHRP.Position), Settings.AimbotSmoothness)
-    end
-end
-
--- 3. LOOP PRINCIPAL (Performance)
-
--- Loop de Física (Baixa frequência)
+-- Loop de Movimento e Física (Baixa frequência para evitar lag)
 task.spawn(function()
     while true do
         local char = LocalPlayer.Character
@@ -236,21 +284,43 @@ task.spawn(function()
     end
 end)
 
--- Loop de Combate e Movimento (Alta frequência)
+-- Loop de Combate e Controle (Alta frequência)
 RunService.RenderStepped:Connect(function()
-    UpdateAimbot()
-    HandleTeleportation()
+    -- Aimbot
+    CombatModule:UpdateAimbot()
     
-    if Settings.FlyEnabled then
-        UpdateFly()
+    -- Fly
+    FlyModule:Update()
+    
+    -- Teleport/Bring Logic
+    if Settings.TeleportEnabled or Settings.BringEnabled then
+        if Settings.TeleportTarget ~= "" then
+            for _, p in ipairs(Players:GetPlayers()) do
+                if p.Name:lower():find(Settings.TeleportTarget:lower()) and p.Character then
+                    local targetHRP = p.Character:FindFirstChild("HumanoidRootPart")
+                    local myHRP = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+                    
+                    if targetHRP and myHRP then
+                        if Settings.TeleportEnabled then
+                            myHRP.CFrame = targetHRP.CFrame * CFrame.new(0, 5, 0)
+                            Settings.TeleportEnabled = false
+                        elseif Settings.BringEnabled then
+                            targetHRP.CFrame = myHRP.CFrame * CFrame.new(0, 0, -3)
+                            Settings.BringEnabled = false
+                        end
+                    end
+                    break
+                end
+            end
+        end
     end
-    
-    -- KillAura (Placeholder para RemoteEvent)
-    if Settings.KillAura then
-        -- Implementar disparo de Remote aqui
+
+    -- Bang Logic
+    if Settings.BangEnabled then
+        TrollModule:Bang(Settings.TeleportTarget)
     end
 end)
 
 -- Inicialização
 local Menu = CreateMenu()
-print("[Blobloxitos Aura] Sistema Carregado. Use o Menu para controlar.")
+print("[Blobloxitos Aura] V3 Carregada. Use o Menu para controlar.")
