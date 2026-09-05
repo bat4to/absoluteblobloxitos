@@ -1,5 +1,5 @@
--- [[ fpsdosblobloxitos - PRECISION RED ZONE EDITION ]] --
--- Lógica: Aimbot (Círculo Branco) + Triggerbot (Círculo Vermelho)
+-- [[ fpsdosblobloxitos - AGGRESSION EDITION ]] --
+-- Foco: Aimbot Forte e Triggerbot de Alta Sensibilidade
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -7,45 +7,45 @@ local UserInputService = game:GetService("UserInputService")
 local LocalPlayer = Players.LocalPlayer
 local Camera = workspace.CurrentCamera
 
--- Configurações de Precisão
+-- Configurações de Combate de Alta Performance
 local Settings = {
     ESP_Enabled = true,
     Aimbot_Enabled = true,
     Triggerbot_Enabled = true,
-    FOV_Radius = 150,        -- Raio do círculo branco (Aimbot)
-    Trigger_Radius = 25,     -- Raio do círculo vermelho (Zona de Tiro)
-    Aimbot_Smoothness = 0.12, -- Suavidade da puxada da mira
-    Color_FOV = Color3.fromRGB(255, 255, 255), -- Branco
-    Color_Trigger = Color3.fromRGB(255, 0, 0), -- Vermelho
-    Color_Center = Color3.fromRGB(0, 170, 255) -- Azul (Referência)
+    FOV_Radius = 180,        -- Raio de busca (Branco)
+    Trigger_Radius = 20,     -- Raio de disparo (Vermelho)
+    Aimbot_Strength = 0.4,   -- AUMENTADO: 0.1 era lento, 0.4 é agressivo
+    Color_FOV = Color3.fromRGB(255, 255, 255), 
+    Color_Trigger = Color3.fromRGB(255, 0, 0), 
+    Color_Center = Color3.fromRGB(0, 255, 255) -- Ciano para o centro
 }
 
--- Variáveis de Desenho (API de Desenho)
-local FOVCircle = Drawing.new("Circle") -- Círculo Branco
+-- Variáveis de Desenho
+local FOVCircle = Drawing.new("Circle") 
 FOVCircle.Visible = true
 FOVCircle.Radius = Settings.FOV_Radius
 FOVCircle.Color = Settings.Color_FOV
 FOVCircle.Thickness = 1
-FOVCircle.Transparency = 0.4
+FOVCircle.Transparency = 0.3
 FOVCircle.Filled = false
 
-local TriggerCircle = Drawing.new("Circle") -- Círculo Vermelho
+local TriggerCircle = Drawing.new("Circle") 
 TriggerCircle.Visible = true
 TriggerCircle.Radius = Settings.Trigger_Radius
 TriggerCircle.Color = Settings.Color_Trigger
 TriggerCircle.Thickness = 2
-TriggerCircle.Transparency = 0.6
+TriggerCircle.Transparency = 0.5
 TriggerCircle.Filled = false
 
-local CenterDot = Drawing.new("Circle") -- Ponto Azul Central
+local CenterDot = Drawing.new("Circle") 
 CenterDot.Visible = true
-CenterDot.Radius = 2
+CenterDot.Radius = 3
 CenterDot.Color = Settings.Color_Center
 CenterDot.Transparency = 1
 CenterDot.Filled = true
 
--- [[ FUNÇÃO PARA ENCONTRAR O ALVO MAIS PRÓXIMO DO CENTRO ]] --
-local function GetTarget()
+-- [[ FUNÇÃO DE BUSCA DE ALVO ]] --
+local function GetClosestTarget()
     local ClosestTarget = nil
     local ShortestDistance = Settings.FOV_Radius
     local ScreenCenter = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
@@ -63,7 +63,6 @@ local function GetTarget()
                     local targetPos = Vector2.new(pos.X, pos.Y)
                     local distance = (ScreenCenter - targetPos).Magnitude
 
-                    -- O alvo deve estar dentro do círculo branco para ser considerado
                     if distance < ShortestDistance then
                         ClosestTarget = player
                         ShortestDistance = distance
@@ -75,13 +74,12 @@ local function GetTarget()
     return ClosestTarget
 end
 
--- [[ SISTEMA DE ESP ]] --
+-- [[ SISTEMA DE ESP (Otimizado) ]] --
 local function ApplyESP(player)
     local function Setup()
         if not player.Character then return end
         local char = player.Character
         
-        -- Highlight (Contorno Branco)
         local Highlight = char:FindFirstChild("ESP_Highlight") or Instance.new("Highlight")
         Highlight.Name = "ESP_Highlight"
         Highlight.Parent = char
@@ -90,7 +88,6 @@ local function ApplyESP(player)
         Highlight.OutlineColor = Color3.new(1, 1, 1)
         Highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
         
-        -- Nome
         local Billboard = char:FindFirstChild("ESP_Name") or Instance.new("BillboardGui")
         Billboard.Name = "ESP_Name"
         Billboard.Parent = char
@@ -108,17 +105,16 @@ local function ApplyESP(player)
     end
     
     task.spawn(function()
-        while task.wait(2) do
+        while task.wait(3) do
             if Settings.ESP_Enabled then Setup() end
         end
     end)
 end
 
--- [[ LOOP PRINCIPAL ]] --
+-- [[ LOOP DE COMBATE (Aimbot & Triggerbot) ]] --
 RunService.RenderStepped:Connect(function()
     local ScreenCenter = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
     
-    -- Atualiza posições visuais
     FOVCircle.Position = ScreenCenter
     TriggerCircle.Position = ScreenCenter
     CenterDot.Position = ScreenCenter
@@ -133,16 +129,19 @@ RunService.RenderStepped:Connect(function()
             local targetScreenPos = Vector2.new(headPos, 0)
             local distanceToCenter = (ScreenCenter - targetScreenPos).Magnitude
             
-            -- 1. LÓGICA DO AIMBOT (Puxa a câmera para o alvo)
+            -- 1. AIMBOT (Puxada Forte)
             if Settings.Aimbot_Enabled then
-                Camera.CFrame = Camera.CFrame:Lerp(CFrame.new(Camera.CFrame.Position, targetHead.Position), Settings.Aimbot_Smoothness)
+                -- Usando uma interpolação mais agressiva para "travar" a mira
+                local targetCFrame = CFrame.new(Camera.CFrame.Position, targetHead.Position)
+                Camera.CFrame = Camera.CFrame:Lerp(targetCFrame, Settings.Aimbot_Strength)
             end
             
-            -- 2. LÓGICA DO TRIGGERBOT (Só atira se estiver na bolinha vermelha)
+            -- 2. TRIGGERBOT (Disparo de Precisão)
             if Settings.Triggerbot_Enabled then
-                -- Se a distância do centro até a cabeça for menor que o raio da bola vermelha
+                -- Verifica se o alvo está dentro da zona vermelha
                 if distanceToCenter < Settings.Trigger_Radius then
-                    mouse1click() -- Dispara o clique
+                    -- Simulação de clique direto
+                    mouse1click()
                 end
             end
         end
@@ -155,7 +154,6 @@ UserInputService.InputBegan:Connect(function(input, processed)
     if input.KeyCode == Enum.KeyCode.G then
         Settings.Aimbot_Enabled = not Settings.Aimbot_Enabled
         Settings.Triggerbot_Enabled = not Settings.Triggerbot_Enabled
-        print("Aimbot/Trigger: ", Settings.Aimbot_Enabled)
     end
 end)
 
@@ -168,4 +166,4 @@ Players.PlayerAdded:Connect(function(player)
     ApplyESP(player)
 end)
 
-print("fpsdosblobloxitos [RED ZONE] Carregado!")
+print("fpsdosblobloxitos [AGGRESSION] Carregado!")
