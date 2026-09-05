@@ -1,24 +1,22 @@
--- [[ fpsdosblobloxitos - HARD-LOCK EDITION ]] --
--- Foco: Aimbot de Trava Direta e Triggerbot de Colisão Real
+-- [[ fpsdosblobloxitos - OVERDRIVE EDITION ]] --
+-- Foco: Rotação de Ângulo Direta e Trigger por Raycast
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 local LocalPlayer = Players.LocalPlayer
 local Camera = workspace.CurrentCamera
-local Mouse = LocalPlayer:GetMouse()
 
 -- Configurações de Combate Extremo
 local Settings = {
     ESP_Enabled = true,
     Aimbot_Enabled = true,
     Triggerbot_Enabled = true,
-    FOV_Radius = 180,        -- Raio de busca (Branco)
-    Trigger_Radius = 25,     -- Raio de disparo (Vermelho)
-    Aimbot_Smoothness = 0.3, -- Força da puxada (0.1 a 1.0)
-    Color_FOV = Color3.fromRGB(255, 255, 255), 
-    Color_Trigger = Color3.fromRGB(255, 0, 0), 
-    Color_Center = Color3.fromRGB(0, 255, 255)
+    FOV_Radius = 150,
+    Aimbot_Smoothness = 0.25, -- Quanto maior, mais rápido o giro
+    Trigger_Sensitivity = 0.1, -- Sensibilidade do disparo
+    Color_FOV = Color3.fromRGB(255, 255, 255),
+    Color_Trigger = Color3.fromRGB(255, 0, 0)
 }
 
 -- Variáveis de Desenho
@@ -32,20 +30,13 @@ FOVCircle.Filled = false
 
 local TriggerCircle = Drawing.new("Circle")
 TriggerCircle.Visible = true
-TriggerCircle.Radius = Settings.Trigger_Radius
+TriggerCircle.Radius = 20 -- Tamanho da zona de tiro
 TriggerCircle.Color = Settings.Color_Trigger
 TriggerCircle.Thickness = 2
 TriggerCircle.Transparency = 0.5
 TriggerCircle.Filled = false
 
-local CenterDot = Drawing.new("Circle")
-CenterDot.Visible = true
-CenterDot.Radius = 3
-CenterDot.Color = Settings.Color_Center
-CenterDot.Transparency = 1
-CenterDot.Filled = true
-
--- [[ FUNÇÃO DE DETECÇÃO DE ALVO ]] --
+-- [[ FUNÇÃO PARA DETECTAR O ALVO MAIS PRÓXIMO DO CENTRO ]] --
 local function GetClosestTarget()
     local ClosestTarget = nil
     local ShortestDistance = Settings.FOV_Radius
@@ -59,14 +50,9 @@ local function GetClosestTarget()
 
             if head and hum and hum.Health > 0 then
                 local pos, onScreen = Camera:WorldToViewportPoint(head.Position)
-                
                 if onScreen then
-                    -- Usamos a posição do mouse para detectar proximidade, não o centro da tela
-                    -- Isso ajuda se o jogo travar o mouse no centro
-                    local mousePos = Vector2.new(Mouse.X, Mouse.Y)
                     local targetPos = Vector2.new(pos.X, pos.Y)
-                    local distance = (mousePos - targetPos).Magnitude
-
+                    local distance = (ScreenCenter - targetPos).Magnitude
                     if distance < ShortestDistance then
                         ClosestTarget = player
                         ShortestDistance = distance
@@ -78,7 +64,7 @@ local function GetClosestTarget()
     return ClosestTarget
 end
 
--- [[ SISTEMA DE ESP ]] --
+-- [[ SISTEMA DE ESP (CONTORNO E NOME) ]] --
 local function ApplyESP(player)
     local function Setup()
         if not player.Character then return end
@@ -115,40 +101,38 @@ local function ApplyESP(player)
     end)
 end
 
--- [[ LOOP DE COMBATE ]] --
+-- [[ LOOP DE COMBATE (Aimbot de Rotação e Trigger de Raycast) ]] --
 RunService.RenderStepped:Connect(function()
     local ScreenCenter = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
-    
     FOVCircle.Position = ScreenCenter
     TriggerCircle.Position = ScreenCenter
-    CenterDot.Position = ScreenCenter
     
     local TargetPlayer = GetClosestTarget()
     
     if TargetPlayer and TargetPlayer.Character and TargetPlayer.Character:FindFirstChild("Head") then
         local targetHead = TargetPlayer.Character.Head
-        local headPos, onScreen = Camera:WorldToViewportPoint(targetHead.Position)
         
-        if onScreen then
-            -- 1. AIMBOT (Puxada de Câmera Corrigida)
-            if Settings.Aimbot_Enabled then
-                -- Em vez de apenas Lerp, forçamos a rotação da câmera para o alvo
-                local targetCFrame = CFrame.new(Camera.CFrame.Position, targetHead.Position)
-                Camera.CFrame = Camera.CFrame:Lerp(targetCFrame, Settings.Aimbot_Smoothness)
-            end
+        -- 1. AIMBOT (Rotação de Câmera Forçada)
+        if Settings.Aimbot_Enabled then
+            -- Calcula a direção para o alvo
+            local targetPos = targetHead.Position
+            local currentPos = Camera.CFrame.Position
             
-            -- 2. TRIGGERBOT (Detecção de Colisão no Centro)
-            if Settings.Triggerbot_Enabled then
-                -- Verificamos a posição do mouse real em relação ao alvo
-                local mousePos = Vector2.new(Mouse.X, Mouse.Y)
-                local targetPos = Vector2.new(headPos, 0)
-                local distanceToMouse = (mousePos - targetPos).Magnitude
-                
-                -- Se o alvo estiver dentro do raio vermelho (perto do mouse/centro)
-                if distanceToMouse < Settings.Trigger_Radius then
-                    -- Disparo forçado
-                    mouse1click()
-                end
+            -- Cria uma nova CFrame olhando para o alvo e aplica suavidade
+            local lookAt = CFrame.new(currentPos, targetPos)
+            Camera.CFrame = Camera.CFrame:Lerp(lookAt, Settings.Aimbot_Smoothness)
+        end
+        
+        -- 2. TRIGGERBOT (Simulação de Raycast para o Disparo)
+        if Settings.Triggerbot_Enabled then
+            -- Verifica se o alvo está no centro da tela (dentro do círculo vermelho)
+            local headPos, onScreen = Camera:WorldToViewportPoint(targetHead.Position)
+            local targetScreenPos = Vector2.new(headPos, 0)
+            local distanceToCenter = (ScreenCenter - targetScreenPos).Magnitude
+            
+            if distanceToCenter < Settings.Trigger_Radius then
+                -- Emula o clique de forma mais agressiva
+                mouse1click()
             end
         end
     end
@@ -160,7 +144,6 @@ UserInputService.InputBegan:Connect(function(input, processed)
     if input.KeyCode == Enum.KeyCode.G then
         Settings.Aimbot_Enabled = not Settings.Aimbot_Enabled
         Settings.Triggerbot_Enabled = not Settings.Triggerbot_Enabled
-        print("Toggle: AIM/TRIGGER ->", Settings.Aimbot_Enabled)
     end
 end)
 
@@ -173,4 +156,4 @@ Players.PlayerAdded:Connect(function(player)
     ApplyESP(player)
 end)
 
-print("fpsdosblobloxitos [HARD-LOCK] Carregado!")
+print("fpsdosblobloxitos [OVERDRIVE] Carregado!")
