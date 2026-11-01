@@ -663,3 +663,18 @@ updateFOV()
 
 print("[CyberAim]: Script carregado com sucesso.")
 print("[CyberAim]: Use M para menu, F para Aimbot, V para ESP, C para ciclar alvos.")
+UserInputService.InputBegan:Connect(function(Input, GameProcessed)
+    if GameProcessed then return end
+    
+    if Input.KeyCode == Keybind then
+        Enabled = not Enabled
+        -- Feedback visual simples na tela
+        print("Aimbot: " .. (Enabled and "ON" or "OFF"))
+        
+        if Enabled then
+            -- Efeito visual ou som poderia ser adicionado aqui
+        end
+    end
+end)
+
+print("Script carregado com sucesso! Use [F] para ativar o Aim.")
