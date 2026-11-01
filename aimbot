@@ -1,0 +1,245 @@
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+
+local localPlayer = Players.LocalPlayer
+local camera = workspace.CurrentCamera
+
+-- ==========================
+-- CONFIGURAÇÕES
+-- ==========================
+local Config = {
+    Enabled = true,          -- Liga/Desliga o Aimbot
+    Smoothing = 0.15,        -- Quanto mais baixo, mais rápido (0.01 = instantâneo, 0.5 = muito suave)
+    AimPart = "Head",        -- Parte do corpo para mirar (Head, HumanoidRootPart)
+    Range = 1000,            -- Distância máxima de alcance
+    FOV = 15,                -- Campo de visão (graus) para considerar o alvo "centralizado"
+    AutoFire = true,         -- Dispara automaticamente quando mira no alvo
+    AutoFireRate = 15,       -- FPS de disparo automático (frames por segundo)
+    KeyBindToggle = Enum.KeyCode.F, -- Tecla para ligar/desligar
+    KeyBindTarget = Enum.KeyCode.C, -- Tecla para ciclar alvos
+    TargetTeam = "Enemies",  -- "Enemies" (inimigos), "All" (todos), "Friendly" (amigos)
+    IgnoreWalls = true       -- Usa raycast para ignorar alvos atrás de objetos
+}
+
+local state = {
+    target = nil,            -- Alvo atual
+    lastFireTime = 0,        -- Controle de rate de disparo
+    isAiming = false         -- Se o jogador está segurando o botão de mira
+}
+
+-- ==========================
+-- FUNÇÕES UTILITÁRIAS
+-- ==========================
+
+local function getCharacter()
+    return localPlayer.Character
+end
+
+local function isEnemy(part)
+    local character = part.Parent
+    if not character or not character:FindFirstChildOfClass("Humanoid") then return false end
+    if character == getCharacter() then return false end
+    
+    local humanoid = character:FindFirstChildOfClass("Humanoid")
+    if humanoid.Health <= 0 then return false end
+
+    local player = Players:GetPlayerFromCharacter(character)
+    if not player then return false end
+
+    if Config.TargetTeam == "Enemies" then
+        return player.Team ~= localPlayer.Team
+    elseif Config.TargetTeam == "Friendly" then
+        return player.Team == localPlayer.Team
+    end
+    return true
+end
+
+local function isLineOfSightClear(cameraPosition, targetPosition, ignoreWalls)
+    if not ignoreWalls then return true end
+    
+    local rayParams = RaycastParams.new()
+    rayParams.FilterDescendantsInstances = {getCharacter()}
+    rayParams.FilterType = Enum.RaycastFilterType.Exclude
+    
+    local direction = (targetPosition - cameraPosition)
+    local distance = direction.Magnitude
+    direction = direction.Unit
+    
+    local result = workspace:Raycast(cameraPosition, direction * distance, rayParams)
+    return result == nil or result.Instance.Parent == targetPosition.Parent
+end
+
+local function getBestTarget()
+    local character = getCharacter()
+    if not character then return nil end
+    
+    local camPos = camera.CFrame.Position
+    local camDir = camera.CFrame.LookVector
+    local bestTarget = nil
+    local bestDistance = math.huge
+    local bestAngle = math.huge
+
+    for _, otherChar in pairs(Players:GetPlayers()) do
+        if otherChar == localPlayer then continue end
+        if not otherChar.Character then continue end
+        
+        local targetChar = otherChar.Character
+        local targetPart = targetChar:FindFirstChild(Config.AimPart) or targetChar:FindFirstChild("HumanoidRootPart")
+        
+        if not targetPart then continue end
+        if not isEnemy(targetPart) then continue end
+        
+        local targetPos = targetPart.Position
+        local distance = (camPos - targetPos).Magnitude
+        
+        if distance > Config.Range then continue end
+        
+        -- Verifica se está na linha de visão (FOV)
+        local dirToTarget = (targetPos - camPos).Unit
+        local angle = math.acos(math.clamp(camDir:Dot(dirToTarget), -1, 1)) * (180 / math.pi)
+        
+        if angle > Config.FOV then continue end
+        
+        -- Verifica obstrução
+        if Config.IgnoreWalls and not isLineOfSightClear(camPos, targetPos, true) then continue end
+
+        -- Prioriza distância, mas considera ângulo se estiverem muito próximos
+        if distance < bestDistance or (distance < bestDistance + 5 and angle < bestAngle) then
+            bestTarget = targetPart
+            bestDistance = distance
+            bestAngle = angle
+        end
+    end
+
+    return bestTarget
+end
+
+local function cycleTarget()
+    local currentTarget = state.target
+    local targets = {}
+    local character = getCharacter()
+    if not character then return end
+
+    local camPos = camera.CFrame.Position
+    local camDir = camera.CFrame.LookVector
+
+    for _, otherChar in pairs(Players:GetPlayers()) do
+        if otherChar == localPlayer then continue end
+        if not otherChar.Character then continue end
+        local targetPart = otherChar.Character:FindFirstChild(Config.AimPart)
+        if targetPart and isEnemy(targetPart) then
+            local targetPos = targetPart.Position
+            local distance = (camPos - targetPos).Magnitude
+            local dirToTarget = (targetPos - camPos).Unit
+            local angle = math.acos(math.clamp(camDir:Dot(dirToTarget), -1, 1)) * (180 / math.pi)
+            
+            if distance <= Config.Range and angle <= Config.FOV then
+                table.insert(targets, {part = targetPart, dist = distance, angle = angle})
+            end
+        end
+    end
+
+    table.sort(targets, function(a, b) return a.dist < b.dist end)
+    
+    if #targets == 0 then
+        state.target = nil
+        return
+    end
+
+    local currentIndex = 1
+    for i, t in ipairs(targets) do
+        if t.part == currentTarget then
+            currentIndex = i
+            break
+        end
+    end
+    
+    local nextIndex = (currentIndex % #targets) + 1
+    state.target = targets[nextIndex].part
+end
+
+-- ==========================
+-- LOOP PRINCIPAL
+-- ==========================
+
+local lastUpdate = tick()
+
+RunService.Heartbeat:Connect(function(deltaTime)
+    if not Config.Enabled then
+        state.target = nil
+        return
+    end
+
+    local character = getCharacter()
+    if not character then return end
+
+    -- Atualiza alvo
+    if not state.target or not state.target.Parent or not state.target.Parent:FindFirstChildOfClass("Humanoid") then
+        state.target = getBestTarget()
+    end
+
+    -- Verifica se o alvo atual ainda é o melhor (ou se mudou)
+    local currentBest = getBestTarget()
+    if currentBest and state.target ~= currentBest and (not state.target or (camera.CFrame.Position - currentBest.Position).Magnitude < (camera.CFrame.Position - state.target.Position).Magnitude) then
+         -- Só troca se o novo alvo for significativamente melhor/mais próximo
+         if (camera.CFrame.Position - currentBest.Position).Magnitude < (camera.CFrame.Position - state.target.Position).Magnitude * 0.9 then
+             state.target = currentBest
+         end
+    end
+
+    if not state.target then return end
+
+    -- Calcula CFrame de mira
+    local targetPos = state.target.Position
+    local camPos = camera.CFrame.Position
+    
+    -- Interpolação suave (Smoothing)
+    local currentLookAt = camera.CFrame.LookVector
+    local desiredLookAt = (targetPos - camPos).Unit
+    
+    -- Blending baseado em smoothing
+    local blendFactor = 1 - Config.Smoothing
+    local smoothedLookAt = currentLookAt * Config.Smoothing + desiredLookAt * blendFactor
+    smoothedLookAt = smoothedLookAt.Unit
+    
+    -- Aplica a rotação
+    camera.CFrame = CFrame.lookAt(camPos, camPos + smoothedLookAt)
+
+    -- Auto Fire
+    if Config.AutoFire then
+        local currentTime = tick()
+        local fireInterval = 1 / Config.AutoFireRate
+        
+        if currentTime - state.lastFireTime >= fireInterval then
+            -- Simula o disparo
+            local mouse = localPlayer:GetMouse()
+            mouse.Button1Down = true
+            -- Para jogos com cooldown, isso garante que o input seja processado
+            task.wait(0.01)
+            mouse.Button1Down = false
+            state.lastFireTime = currentTime
+        end
+    end
+end)
+
+-- ==========================
+-- INPUT HANDLING
+-- ==========================
+
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if gameProcessed then return end
+
+    if input.KeyCode == Config.KeyBindToggle then
+        Config.Enabled = not Config.Enabled
+        print(("[Aimbot]: Estado alterado para %s"):format(Config.Enabled and "ATIVO" or "INATIVO"))
+        if not Config.Enabled then
+            state.target = nil
+        end
+    elseif input.KeyCode == Config.KeyBindTarget then
+        cycleTarget()
+        print(("[Aimbot]: Novo alvo selecionado"))
+    end
+end)
+
+print("[Aimbot]: Script carregado. Use F para ativar/desativar e C para ciclar alvos.")
