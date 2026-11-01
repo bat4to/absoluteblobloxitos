@@ -1,84 +1,461 @@
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
 
 local localPlayer = Players.LocalPlayer
 local camera = workspace.CurrentCamera
 
 -- ==========================
--- CONFIGURAÇÕES
+-- ESTADO E CONFIGURAÇÕES
 -- ==========================
 local Config = {
-    Enabled = true,          -- Liga/Desliga o Aimbot
-    Smoothing = 0.15,        -- Quanto mais baixo, mais rápido (0.01 = instantâneo, 0.5 = muito suave)
-    AimPart = "Head",        -- Parte do corpo para mirar (Head, HumanoidRootPart)
-    Range = 1000,            -- Distância máxima de alcance
-    FOV = 15,                -- Campo de visão (graus) para considerar o alvo "centralizado"
-    AutoFire = true,         -- Dispara automaticamente quando mira no alvo
-    AutoFireRate = 15,       -- FPS de disparo automático (frames por segundo)
-    KeyBindToggle = Enum.KeyCode.F, -- Tecla para ligar/desligar
-    KeyBindTarget = Enum.KeyCode.C, -- Tecla para ciclar alvos
-    TargetTeam = "Enemies",  -- "Enemies" (inimigos), "All" (todos), "Friendly" (amigos)
-    IgnoreWalls = true       -- Usa raycast para ignorar alvos atrás de objetos
+    AimbotEnabled = true,
+    ESPEnabled = true,
+    MenuOpen = true,
+    
+    -- Aimbot Settings
+    Smoothing = 0.12,       -- 0.01 (rápido) a 0.5 (suave)
+    AimPart = "Head",       -- Head, HumanoidRootPart
+    Range = 1500,           -- Distância máxima
+    FOV = 20,               -- Campo de visão (graus)
+    AutoFire = true,
+    FireRate = 20,          -- FPS de disparo
+    Prediction = true,      -- Antecipar movimento
+    PredictionScale = 0.3,  -- Intensidade da predição
+    
+    -- ESP Settings
+    ESPColor = Color3.fromRGB(255, 50, 50), -- Vermelho para inimigos
+    FriendlyColor = Color3.fromRGB(50, 255, 50), -- Verde para amigos
+    ShowTracers = true,
+    ShowDistance = true,
+    DrawThickness = 2,
+    
+    -- Hotkeys
+    KeyMenu = Enum.KeyCode.M,
+    KeyToggleAim = Enum.KeyCode.F,
+    KeyToggleESP = Enum.KeyCode.V,
+    KeyCycleTarget = Enum.KeyCode.C,
+    KeyReset = Enum.KeyCode.R
 }
 
 local state = {
-    target = nil,            -- Alvo atual
-    lastFireTime = 0,        -- Controle de rate de disparo
-    isAiming = false         -- Se o jogador está segurando o botão de mira
+    currentTarget = nil,
+    manualTarget = nil, -- Para quando o usuário clica em um alvo
+    lastFireTime = 0,
+    espObjects = {},    -- Guarda referências dos objetos ESP para limpeza
+    mousePos = Vector2.new(0,0)
 }
 
 -- ==========================
--- FUNÇÕES UTILITÁRIAS
+-- UTILITÁRIOS
 -- ==========================
-
-local function getCharacter()
-    return localPlayer.Character
-end
+local function getChar() return localPlayer.Character end
 
 local function isEnemy(part)
-    local character = part.Parent
-    if not character or not character:FindFirstChildOfClass("Humanoid") then return false end
-    if character == getCharacter() then return false end
+    local char = part.Parent
+    if not char or not char:FindFirstChildOfClass("Humanoid") then return false end
+    if char == getChar() then return false end
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    if hum.Health <= 0 then return false end
     
-    local humanoid = character:FindFirstChildOfClass("Humanoid")
-    if humanoid.Health <= 0 then return false end
-
-    local player = Players:GetPlayerFromCharacter(character)
-    if not player then return false end
-
-    if Config.TargetTeam == "Enemies" then
-        return player.Team ~= localPlayer.Team
-    elseif Config.TargetTeam == "Friendly" then
-        return player.Team == localPlayer.Team
-    end
-    return true
+    local p = Players:GetPlayerFromCharacter(char)
+    if not p then return false end
+    return p.Team ~= localPlayer.Team
 end
 
-local function isLineOfSightClear(cameraPosition, targetPosition, ignoreWalls)
-    if not ignoreWalls then return true end
-    
+local function isLineOfSightClear(fromPos, toPos)
     local rayParams = RaycastParams.new()
-    rayParams.FilterDescendantsInstances = {getCharacter()}
+    rayParams.FilterDescendantsInstances = {getChar()}
     rayParams.FilterType = Enum.RaycastFilterType.Exclude
-    
-    local direction = (targetPosition - cameraPosition)
-    local distance = direction.Magnitude
-    direction = direction.Unit
-    
-    local result = workspace:Raycast(cameraPosition, direction * distance, rayParams)
-    return result == nil or result.Instance.Parent == targetPosition.Parent
+    local dir = toPos - fromPos
+    local dist = dir.Magnitude
+    local res = workspace:Raycast(fromPos, dir.Unit * dist, rayParams)
+    return res == nil or res.Instance.Parent == toPos.Parent
 end
 
+-- ==========================
+-- SISTEMA DE ESP
+-- ==========================
+local espLayer = Instance.new("ScreenGui")
+espLayer.Name = "ESP_Layer"
+espLayer.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+espLayer.Parent = localPlayer:WaitForChild("PlayerGui")
+
+local function createESPObject(character)
+    if state.espObjects[character] then return state.espObjects[character] end
+    
+    local part = character:FindFirstChild(Config.AimPart) or character:FindFirstChild("HumanoidRootPart")
+    if not part then return nil end
+    
+    local billboard = Instance.new("BillboardGui")
+    billboard.Name = "ESP_Billboard"
+    billboard.Size = UDim2.new(0, 150, 0, 150)
+    billboard.StudsOffset = Vector3.new(0, 2, 0)
+    billboard.AlwaysOnTop = true
+    billboard.Parent = part
+    
+    local box = Instance.new("Frame")
+    box.Name = "ESP_Box"
+    box.AnchorPoint = Vector2.new(0.5, 0.5)
+    box.Position = UDim2.new(0.5, 0, 0.5, 0)
+    box.BackgroundColor3 = Config.ESPColor
+    box.BackgroundTransparency = 0.5
+    box.BorderSizePixel = 0
+    box.Size = UDim2.new(0, 50, 0, 50)
+    box.Parent = billboard
+    
+    local nameLabel = Instance.new("TextLabel")
+    nameLabel.Name = "ESP_Name"
+    nameLabel.BackgroundTransparency = 1
+    nameLabel.Size = UDim2.new(1, 0, 0, 20)
+    nameLabel.Position = UDim2.new(0, 0, 0, -25)
+    nameLabel.Text = Players:GetPlayerFromCharacter(character).Name
+    nameLabel.TextColor3 = Color3.new(1, 1, 1)
+    nameLabel.TextScaled = true
+    nameLabel.Font = Enum.Font.GothamBold
+    nameLabel.Parent = billboard
+    
+    local distLabel = Instance.new("TextLabel")
+    distLabel.Name = "ESP_Dist"
+    distLabel.BackgroundTransparency = 1
+    distLabel.Size = UDim2.new(1, 0, 0, 20)
+    distLabel.Position = UDim2.new(0, 0, 0, 25)
+    distLabel.Text = "0m"
+    distLabel.TextColor3 = Color3.new(1, 1, 1)
+    distLabel.TextScaled = true
+    distLabel.Font = Enum.Font.Gotham
+    distLabel.Visible = Config.ShowDistance
+    distLabel.Parent = billboard
+    
+    local tracer = Instance.new("Beam")
+    tracer.Name = "ESP_Tracer"
+    tracer.FaceCamera = true
+    tracer.LightEmission = 1
+    tracer.Color = ColorSequence.new(Config.ESPColor)
+    tracer.Width1 = 0.02
+    tracer.Width2 = 0
+    tracer.DrawOrder = 10
+    tracer.Parent = part
+    tracer.Enabled = Config.ShowTracers
+    
+    state.espObjects[character] = {
+        billboard = billboard,
+        box = box,
+        name = nameLabel,
+        dist = distLabel,
+        tracer = tracer
+    }
+    
+    return state.espObjects[character]
+end
+
+local function cleanupESP(character)
+    if state.espObjects[character] then
+        state.espObjects[character].billboard:Destroy()
+        state.espObjects[character].tracer:Destroy()
+        state.espObjects[character] = nil
+    end
+end
+
+local function updateESP()
+    -- Limpa ESPs de quem morreu ou saiu
+    for char, obj in pairs(state.espObjects) do
+        if not char:FindFirstChildOfClass("Humanoid") or char:FindFirstChildOfClass("Humanoid").Health <= 0 then
+            cleanupESP(char)
+        end
+    end
+    
+    if not Config.ESPEnabled then return end
+    
+    local camPos = camera.CFrame.Position
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p == localPlayer or not p.Character then continue end
+        if not isEnemy(p.Character) then
+            -- Opcional: ESP para amigos (apenas cor verde)
+            if p.Team == localPlayer.Team then
+                local existing = state.espObjects[p.Character]
+                if existing then
+                    existing.box.BackgroundColor3 = Config.FriendlyColor
+                    existing.tracer.Color = ColorSequence.new(Config.FriendlyColor)
+                end
+            else
+                cleanupESP(p.Character)
+            end
+            continue
+        end
+        
+        local char = p.Character
+        local part = char:FindFirstChild(Config.AimPart) or char:FindFirstChild("HumanoidRootPart")
+        if not part then continue end
+        
+        local dist = (camPos - part.Position).Magnitude
+        if dist > Config.Range then
+            cleanupESP(char)
+            continue
+        end
+        
+        local espData = createESP(char)
+        if espData then
+            espData.box.BackgroundColor3 = Config.ESPColor
+            espData.tracer.Color = ColorSequence.new(Config.ESPColor)
+            espData.dist.Text = string.format("%.0fm", dist)
+            espData.name.Text = p.Name
+            -- Atualiza tamanho da caixa baseado em distância
+            local scale = math.clamp(50 / (dist / 100), 0.5, 2)
+            espData.box.Size = UDim2.new(0, 50 * scale, 0, 50 * scale)
+        end
+    end
+end
+
+-- ==========================
+-- SISTEMA DE MENU (HUD)
+-- ==========================
+local menuGui = Instance.new("ScreenGui")
+menuGui.Name = "Hack_Menu"
+menuGui.ResetOnSpawn = false
+menuGui.Parent = localPlayer:WaitForChild("PlayerGui")
+
+local mainFrame = Instance.new("Frame")
+mainFrame.Name = "MainFrame"
+mainFrame.Size = UDim2.new(0, 300, 0, 400)
+mainFrame.Position = UDim2.new(0.5, -150, 0.5, -200)
+mainFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+mainFrame.BorderSizePixel = 0
+mainFrame.Active = true
+mainFrame.Draggable = true
+mainFrame.Visible = Config.MenuOpen
+mainFrame.Parent = menuGui
+
+local corner = Instance.new("UICorner")
+corner.CornerRadius = UDim.new(0, 10)
+corner.Parent = mainFrame
+
+local title = Instance.new("TextLabel")
+title.Size = UDim2.new(1, 0, 0, 40)
+title.BackgroundTransparency = 1
+title.Text = "CYBER AIM PRO v2.0"
+title.TextColor3 = Color3.fromRGB(0, 255, 255)
+title.Font = Enum.Font.GothamBold
+title.TextSize = 18
+title.Parent = mainFrame
+
+local function createSlider(parent, yPos, label, min, max, defaultValue, onChange)
+    local container = Instance.new("Frame")
+    container.Size = UDim2.new(1, -20, 0, 30)
+    container.Position = UDim2.new(0, 10, 0, yPos)
+    container.BackgroundTransparency = 1
+    container.Parent = parent
+    
+    local lbl = Instance.new("TextLabel")
+    lbl.Size = UDim2.new(0.5, 0, 1, 0)
+    lbl.BackgroundTransparency = 1
+    lbl.Text = label
+    lbl.TextColor3 = Color3.new(1,1,1)
+    lbl.Font = Enum.Font.Gotham
+    lbl.TextSize = 14
+    lbl.TextXAlignment = Enum.TextXAlignment.Left
+    lbl.Parent = container
+    
+    local valLabel = Instance.new("TextLabel")
+    valLabel.Size = UDim2.new(0.2, 0, 1, 0)
+    valLabel.Position = UDim2.new(0.8, 0, 0, 0)
+    valLabel.BackgroundTransparency = 1
+    valLabel.Text = tostring(defaultValue)
+    valLabel.TextColor3 = Color3.fromRGB(0, 255, 255)
+    valLabel.Font = Enum.Font.Gotham
+    valLabel.TextSize = 14
+    valLabel.TextXAlignment = Enum.TextXAlignment.Right
+    valLabel.Parent = container
+    
+    local sliderBg = Instance.new("Frame")
+    sliderBg.Size = UDim2.new(0.3, 0, 0, 6)
+    sliderBg.Position = UDim2.new(0.7, 0, 0.5, -3)
+    sliderBg.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+    sliderBg.BorderSizePixel = 0
+    sliderBg.Parent = container
+    
+    local sliderFill = Instance.new("Frame")
+    sliderFill.Size = UDim2.new((defaultValue - min) / (max - min), 0, 1, 0)
+    sliderFill.BackgroundColor3 = Color3.fromRGB(0, 255, 255)
+    sliderFill.BorderSizePixel = 0
+    sliderFill.Parent = sliderBg
+    
+    local sliderHit = Instance.new("TextButton")
+    sliderHit.Size = UDim2.new(0.3, 0, 1, 0)
+    sliderHit.Position = UDim2.new(0.7, 0, 0, 0)
+    sliderHit.BackgroundTransparency = 1
+    sliderHit.AutoButtonColor = false
+    sliderHit.Parent = container
+    
+    sliderHit.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            local dragging = true
+            while dragging do
+                local mousePos = UserInputService:GetMouseLocation()
+                local framePos = sliderHit.AbsolutePosition
+                local relativeX = math.clamp((mousePos.X - framePos.X) / (sliderHit.AbsoluteSize.X), 0, 1)
+                local newValue = min + relativeX * (max - min)
+                sliderFill.Size = UDim2.new(relativeX, 0, 1, 0)
+                valLabel.Text = string.format("%.2f", newValue)
+                onChange(newValue)
+                RunService.Heartbeat:Wait()
+            end
+            dragging = false
+        end
+    end)
+    
+    return {
+        SetValue = function(v)
+            local relativeX = (v - min) / (max - min)
+            sliderFill.Size = UDim2.new(relativeX, 0, 1, 0)
+            valLabel.Text = string.format("%.2f", v)
+            onChange(v)
+        end
+    }
+end
+
+local function createToggle(parent, yPos, label, defaultVal, onChange)
+    local container = Instance.new("Frame")
+    container.Size = UDim2.new(1, -20, 0, 30)
+    container.Position = UDim2.new(0, 10, 0, yPos)
+    container.BackgroundTransparency = 1
+    container.Parent = parent
+    
+    local lbl = Instance.new("TextLabel")
+    lbl.Size = UDim2.new(0.7, 0, 1, 0)
+    lbl.BackgroundTransparency = 1
+    lbl.Text = label
+    lbl.TextColor3 = Color3.new(1,1,1)
+    lbl.Font = Enum.Font.Gotham
+    lbl.TextSize = 14
+    lbl.TextXAlignment = Enum.TextXAlignment.Left
+    lbl.Parent = container
+    
+    local btn = Instance.new("TextButton")
+    btn.Size = UDim2.new(0.2, 0, 1, 0)
+    btn.Position = UDim2.new(0.8, 0, 0, 0)
+    btn.BackgroundColor3 = defaultVal and Color3.fromRGB(0, 255, 100) or Color3.fromRGB(255, 50, 50)
+    btn.BorderSizePixel = 0
+    btn.Text = defaultVal and "ON" or "OFF"
+    btn.TextColor3 = Color3.new(0,0,0)
+    btn.Font = Enum.Font.GothamBold
+    btn.TextSize = 12
+    btn.Parent = container
+    
+    btn.MouseButton1Click:Connect(function()
+        local newState = not (btn.Text == "ON")
+        btn.Text = newState and "ON" or "OFF"
+        btn.BackgroundColor3 = newState and Color3.fromRGB(0, 255, 100) or Color3.fromRGB(255, 50, 50)
+        onChange(newState)
+    end)
+    
+    return {
+        SetValue = function(v)
+            btn.Text = v and "ON" or "OFF"
+            btn.BackgroundColor3 = v and Color3.fromRGB(0, 255, 100) or Color3.fromRGB(255, 50, 50)
+            onChange(v)
+        end
+    }
+end
+
+local function createDropdown(parent, yPos, label, options, defaultIndex, onChange)
+    local container = Instance.new("Frame")
+    container.Size = UDim2.new(1, -20, 0, 30)
+    container.Position = UDim2.new(0, 10, 0, yPos)
+    container.BackgroundTransparency = 1
+    container.Parent = parent
+    
+    local lbl = Instance.new("TextLabel")
+    lbl.Size = UDim2.new(0.6, 0, 1, 0)
+    lbl.BackgroundTransparency = 1
+    lbl.Text = label
+    lbl.TextColor3 = Color3.new(1,1,1)
+    lbl.Font = Enum.Font.Gotham
+    lbl.TextSize = 14
+    lbl.TextXAlignment = Enum.TextXAlignment.Left
+    lbl.Parent = container
+    
+    local btn = Instance.new
+resetBtn.Position = UDim2.new(0, 10, 0, 380)
+resetBtn.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+resetBtn.BorderSizePixel = 0
+resetBtn.Text = "RESETAR PADRÕES"
+resetBtn.TextColor3 = Color3.new(1,1,1)
+resetBtn.Font = Enum.Font.GothamBold
+resetBtn.TextSize = 14
+resetBtn.Parent = mainFrame
+
+resetBtn.MouseButton1Click:Connect(function()
+    -- Reset para padrões
+    Config.Smoothing = 0.12
+    Config.Range = 1500
+    Config.FOV = 20
+    Config.AimbotEnabled = true
+    Config.ESPEnabled = true
+    Config.AutoFire = true
+    Config.Prediction = true
+    Config.AimPart = "Head"
+    Config.ShowTracers = true
+    Config.ShowDistance = true
+    
+    -- Atualiza UI
+    menuControls.Smoothing.SetValue(Config.Smoothing)
+    menuControls.Range.SetValue(Config.Range)
+    menuControls.FOV.SetValue(Config.FOV)
+    menuControls.AimToggle.SetValue(Config.AimbotEnabled)
+    menuControls.ESPToggle.SetValue(Config.ESPEnabled)
+    menuControls.AutoFire.SetValue(Config.AutoFire)
+    menuControls.Prediction.SetValue(Config.Prediction)
+    menuControls.AimPart.SetValue(1) -- Head
+    menuControls.Tracers.SetValue(Config.ShowTracers)
+    menuControls.Distance.SetValue(Config.ShowDistance)
+    
+    print("[CyberAim]: Configurações resetadas.")
+end)
+
+-- ==========================
+-- FOV CIRCLE (HUD)
+-- ==========================
+local fovGui = Instance.new("ScreenGui")
+fovGui.Name = "FOV_GUI"
+fovGui.ResetOnSpawn = false
+fovGui.Parent = localPlayer:WaitForChild("PlayerGui")
+
+local fovCircle = Instance.new("Frame")
+fovCircle.Name = "FOV_Circle"
+fovCircle.AnchorPoint = Vector2.new(0.5, 0.5)
+fovCircle.Position = UDim2.new(0.5, 0, 0.5, 0)
+fovCircle.BackgroundColor3 = Color3.fromRGB(0, 255, 255)
+fovCircle.BackgroundTransparency = 1
+fovCircle.BorderSizePixel = 0
+fovCircle.Parent = fovGui
+
+local fovStroke = Instance.new("Stroke")
+fovStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+fovStroke.Color = Color3.fromRGB(0, 255, 255)
+fovStroke.Thickness = 2
+fovStroke.Parent = fovCircle
+
+local function updateFOV()
+    local aspect = camera.ViewportSize.X / camera.ViewportSize.Y
+    local fovRad = math.rad(Config.FOV)
+    local size = math.tan(fovRad) * aspect * 100
+    fovCircle.Size = UDim2.new(0, size, 0, size)
+    fovCircle.Visible = Config.AimbotEnabled
+end
+
+-- ==========================
+-- LÓGICA DE AIMBOT
+-- ==========================
 local function getBestTarget()
-    local character = getCharacter()
+    local character = getChar()
     if not character then return nil end
     
     local camPos = camera.CFrame.Position
     local camDir = camera.CFrame.LookVector
     local bestTarget = nil
-    local bestDistance = math.huge
-    local bestAngle = math.huge
+    local bestScore = math.huge
 
     for _, otherChar in pairs(Players:GetPlayers()) do
         if otherChar == localPlayer then continue end
@@ -95,130 +472,121 @@ local function getBestTarget()
         
         if distance > Config.Range then continue end
         
-        -- Verifica se está na linha de visão (FOV)
-        local dirToTarget = (targetPos - camPos).Unit
-        local angle = math.acos(math.clamp(camDir:Dot(dirToTarget), -1, 1)) * (180 / math.pi)
+        -- Verifica FOV (ângulo)
+        local dirToTarget = (targetPos - camPos)
+        if dirToTarget.Magnitude < 0.1 then continue end
+        dirToTarget = dirToTarget.Unit
+        
+        local dot = camDir:Dot(dirToTarget)
+        local angle = math.acos(math.clamp(dot, -1, 1)) * (180 / math.pi)
         
         if angle > Config.FOV then continue end
         
-        -- Verifica obstrução
-        if Config.IgnoreWalls and not isLineOfSightClear(camPos, targetPos, true) then continue end
+        -- Verifica Linha de Visão (Opcional, desativado por padrão para performance, mas pode ser ativado)
+        -- if not isLineOfSightClear(camPos, targetPos) then continue end
 
-        -- Prioriza distância, mas considera ângulo se estiverem muito próximos
-        if distance < bestDistance or (distance < bestDistance + 5 and angle < bestAngle) then
+        -- Score: Distância pesada + Ângulo
+        local score = distance + (angle * 10)
+        
+        if score < bestScore then
             bestTarget = targetPart
-            bestDistance = distance
-            bestAngle = angle
+            bestScore = score
         end
     end
 
     return bestTarget
 end
 
-local function cycleTarget()
-    local currentTarget = state.target
-    local targets = {}
-    local character = getCharacter()
-    if not character then return end
+local function predictTargetPosition(targetPart, deltaTime)
+    local char = targetPart.Parent
+    local root = char:FindFirstChild("HumanoidRootPart")
+    if not root then return targetPart.Position end
+    
+    local velocity = root.AssemblyLinearVelocity
+    if velocity.Magnitude < 1 then return targetPart.Position end
+    
+    local offset = velocity * (Config.PredictionScale * deltaTime)
+    return targetPart.Position + offset
+end
 
+local function applyAim(targetPart, deltaTime)
     local camPos = camera.CFrame.Position
-    local camDir = camera.CFrame.LookVector
-
-    for _, otherChar in pairs(Players:GetPlayers()) do
-        if otherChar == localPlayer then continue end
-        if not otherChar.Character then continue end
-        local targetPart = otherChar.Character:FindFirstChild(Config.AimPart)
-        if targetPart and isEnemy(targetPart) then
-            local targetPos = targetPart.Position
-            local distance = (camPos - targetPos).Magnitude
-            local dirToTarget = (targetPos - camPos).Unit
-            local angle = math.acos(math.clamp(camDir:Dot(dirToTarget), -1, 1)) * (180 / math.pi)
-            
-            if distance <= Config.Range and angle <= Config.FOV then
-                table.insert(targets, {part = targetPart, dist = distance, angle = angle})
-            end
-        end
-    end
-
-    table.sort(targets, function(a, b) return a.dist < b.dist end)
+    local targetPos = targetPart.Position
     
-    if #targets == 0 then
-        state.target = nil
-        return
-    end
-
-    local currentIndex = 1
-    for i, t in ipairs(targets) do
-        if t.part == currentTarget then
-            currentIndex = i
-            break
-        end
+    -- Aplica predição
+    if Config.Prediction then
+        targetPos = predictTargetPosition(targetPart, deltaTime)
     end
     
-    local nextIndex = (currentIndex % #targets) + 1
-    state.target = targets[nextIndex].part
+    local currentLookAt = camera.CFrame.LookVector
+    local desiredLookAt = (targetPos - camPos).Unit
+    
+    -- Suavização
+    local blendFactor = Config.Smoothing
+    local smoothedLookAt = currentLookAt * blendFactor + desiredLookAt * (1 - blendFactor)
+    smoothedLookAt = smoothedLookAt.Unit
+    
+    -- Aplica CFrame
+    camera.CFrame = CFrame.lookAt(camPos, camPos + smoothedLookAt)
+end
+
+local function autoFire()
+    local currentTime = tick()
+    local fireInterval = 1 / Config.FireRate
+    
+    if currentTime - state.lastFireTime >= fireInterval then
+        local mouse = localPlayer:GetMouse()
+        mouse.Button1Down = true
+        task.wait(0.01)
+        mouse.Button1Down = false
+        state.lastFireTime = currentTime
+    end
 end
 
 -- ==========================
 -- LOOP PRINCIPAL
 -- ==========================
-
-local lastUpdate = tick()
+local lastUpdateTime = tick()
 
 RunService.Heartbeat:Connect(function(deltaTime)
-    if not Config.Enabled then
-        state.target = nil
+    local currentTime = tick()
+    deltaTime = currentTime - lastUpdateTime
+    lastUpdateTime = currentTime
+    
+    if deltaTime > 0.1 then deltaTime = 0.1 end -- Clamp para evitar saltos grandes
+    
+    -- Atualiza FOV
+    updateFOV()
+    
+    -- Atualiza ESP
+    updateESP()
+    
+    -- Lógica de Aimbot
+    if not Config.AimbotEnabled then
+        state.currentTarget = nil
         return
     end
-
-    local character = getCharacter()
+    
+    local character = getChar()
     if not character then return end
-
-    -- Atualiza alvo
-    if not state.target or not state.target.Parent or not state.target.Parent:FindFirstChildOfClass("Humanoid") then
-        state.target = getBestTarget()
+    
+    -- Verifica se o alvo atual ainda é válido
+    if state.currentTarget then
+        if not state.currentTarget.Parent or not state.currentTarget.Parent:FindFirstChildOfClass("Humanoid") then
+            state.currentTarget = nil
+        end
     end
-
-    -- Verifica se o alvo atual ainda é o melhor (ou se mudou)
-    local currentBest = getBestTarget()
-    if currentBest and state.target ~= currentBest and (not state.target or (camera.CFrame.Position - currentBest.Position).Magnitude < (camera.CFrame.Position - state.target.Position).Magnitude) then
-         -- Só troca se o novo alvo for significativamente melhor/mais próximo
-         if (camera.CFrame.Position - currentBest.Position).Magnitude < (camera.CFrame.Position - state.target.Position).Magnitude * 0.9 then
-             state.target = currentBest
-         end
+    
+    -- Se não tem alvo, busca o melhor
+    if not state.currentTarget then
+        state.currentTarget = getBestTarget()
     end
-
-    if not state.target then return end
-
-    -- Calcula CFrame de mira
-    local targetPos = state.target.Position
-    local camPos = camera.CFrame.Position
     
-    -- Interpolação suave (Smoothing)
-    local currentLookAt = camera.CFrame.LookVector
-    local desiredLookAt = (targetPos - camPos).Unit
-    
-    -- Blending baseado em smoothing
-    local blendFactor = 1 - Config.Smoothing
-    local smoothedLookAt = currentLookAt * Config.Smoothing + desiredLookAt * blendFactor
-    smoothedLookAt = smoothedLookAt.Unit
-    
-    -- Aplica a rotação
-    camera.CFrame = CFrame.lookAt(camPos, camPos + smoothedLookAt)
-
-    -- Auto Fire
-    if Config.AutoFire then
-        local currentTime = tick()
-        local fireInterval = 1 / Config.AutoFireRate
+    if state.currentTarget then
+        applyAim(state.currentTarget, deltaTime)
         
-        if currentTime - state.lastFireTime >= fireInterval then
-            -- Simula o disparo
-            local mouse = localPlayer:GetMouse()
-            mouse.Button1Down = true
-            -- Para jogos com cooldown, isso garante que o input seja processado
-            task.wait(0.01)
-            mouse.Button1Down = false
-            state.lastFireTime = currentTime
+        if Config.AutoFire then
+            autoFire()
         end
     end
 end)
@@ -226,20 +594,72 @@ end)
 -- ==========================
 -- INPUT HANDLING
 -- ==========================
-
 UserInputService.InputBegan:Connect(function(input, gameProcessed)
     if gameProcessed then return end
 
-    if input.KeyCode == Config.KeyBindToggle then
-        Config.Enabled = not Config.Enabled
-        print(("[Aimbot]: Estado alterado para %s"):format(Config.Enabled and "ATIVO" or "INATIVO"))
-        if not Config.Enabled then
-            state.target = nil
+    if input.KeyCode == Config.KeyMenu then
+        Config.MenuOpen = not Config.MenuOpen
+        mainFrame.Visible = Config.MenuOpen
+    elseif input.KeyCode == Config.KeyToggleAim then
+        Config.AimbotEnabled = not Config.AimbotEnabled
+        menuControls.AimToggle.SetValue(Config.AimbotEnabled)
+        print(("[CyberAim]: Aimbot %s"):format(Config.AimbotEnabled and "ATIVADO" or "DESATIVADO"))
+    elseif input.KeyCode == Config.KeyToggleESP then
+        Config.ESPEnabled = not Config.ESPEnabled
+        menuControls.ESPToggle.SetValue(Config.ESPEnabled)
+        print(("[CyberAim]: ESP %s"):format(Config.ESPEnabled and "ATIVADO" or "DESATIVADO"))
+    elseif input.KeyCode == Config.KeyCycleTarget then
+        -- Ciclar alvos manualmente
+        local currentTarget = state.currentTarget
+        local targets = {}
+        local character = getChar()
+        if not character then return end
+
+        local camPos = camera.CFrame.Position
+        local camDir = camera.CFrame.LookVector
+
+        for _, otherChar in pairs(Players:GetPlayers()) do
+            if otherChar == localPlayer then continue end
+            if not otherChar.Character then continue end
+            local targetPart = otherChar.Character:FindFirstChild(Config.AimPart)
+            if targetPart and isEnemy(targetPart) then
+                local targetPos = targetPart.Position
+                local distance = (camPos - targetPos).Magnitude
+                local dirToTarget = (targetPos - camPos).Unit
+                local angle = math.acos(math.clamp(camDir:Dot(dirToTarget), -1, 1)) * (180 / math.pi)
+                
+                if distance <= Config.Range and angle <= Config.FOV then
+                    table.insert(targets, {part = targetPart, dist = distance})
+                end
+            end
         end
-    elseif input.KeyCode == Config.KeyBindTarget then
-        cycleTarget()
-        print(("[Aimbot]: Novo alvo selecionado"))
+
+        table.sort(targets, function(a, b) return a.dist < b.dist end)
+        
+        if #targets == 0 then
+            state.currentTarget = nil
+            return
+        end
+
+        local currentIndex = 1
+        for i, t in ipairs(targets) do
+            if t.part == currentTarget then
+                currentIndex = i
+                break
+            end
+        end
+        
+        local nextIndex = (currentIndex % #targets) + 1
+        state.currentTarget = targets[nextIndex].part
+        print(("[CyberAim]: Alvo alterado para #%d"):format(nextIndex))
+    elseif input.KeyCode == Config.KeyReset then
+        -- Dispara o reset do botão
+        resetBtn.MouseButton1Click:Fire()
     end
 end)
 
-print("[Aimbot]: Script carregado. Use F para ativar/desativar e C para ciclar alvos.")
+-- Atualiza FOV imediatamente
+updateFOV()
+
+print("[CyberAim]: Script carregado com sucesso.")
+print("[CyberAim]: Use M para menu, F para Aimbot, V para ESP, C para ciclar alvos.")
